@@ -12,3 +12,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Local workspace
+workspace/
