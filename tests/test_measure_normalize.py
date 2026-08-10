@@ -26,6 +26,11 @@ def _ffmpeg_available() -> bool:
     return True
 
 
+def _clean_work_root() -> None:
+    if WORK_ROOT.exists():
+        shutil.rmtree(WORK_ROOT)
+
+
 def _generate_sine(dst: Path, *, volume_db: float, duration: float = 3.0) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = require_ffmpeg()
@@ -90,8 +95,7 @@ def _rows_by_filename(csv_path: Path) -> dict[str, dict[str, str]]:
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
 class MeasureNormalizeIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
-        if WORK_ROOT.exists():
-            shutil.rmtree(WORK_ROOT)
+        _clean_work_root()
         self.input_dir = WORK_ROOT / "input"
         self.measure_out = WORK_ROOT / "measure_out"
         self.normalize_out = WORK_ROOT / "normalize_out"
@@ -101,6 +105,9 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
 
         _generate_sine(self.loud_wav, volume_db=6.0)
         _generate_sine(self.quiet_wav, volume_db=-36.0)
+
+    def tearDown(self) -> None:
+        _clean_work_root()
 
     def test_measure_csv_and_normalize_to_target(self) -> None:
         measure_csv = self.measure_out / "loudbatch.csv"
@@ -150,8 +157,7 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
 class MeasureNormalizeFailureTests(unittest.TestCase):
     def setUp(self) -> None:
-        if WORK_ROOT.exists():
-            shutil.rmtree(WORK_ROOT)
+        _clean_work_root()
         self.input_dir = WORK_ROOT / "fail_input"
         self.measure_out = WORK_ROOT / "fail_measure_out"
         self.normalize_out = WORK_ROOT / "fail_normalize_out"
@@ -159,6 +165,9 @@ class MeasureNormalizeFailureTests(unittest.TestCase):
 
         self.input_dir.mkdir(parents=True)
         self.bad_wav.write_bytes(b"not a wav file")
+
+    def tearDown(self) -> None:
+        _clean_work_root()
 
     def test_measure_and_normalize_fail_on_corrupt_wav(self) -> None:
         measure_csv = self.measure_out / "loudbatch.csv"
@@ -190,12 +199,14 @@ class MeasureNormalizeFailureTests(unittest.TestCase):
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
 class SilenceNormalizeFailureTests(unittest.TestCase):
     def setUp(self) -> None:
-        if WORK_ROOT.exists():
-            shutil.rmtree(WORK_ROOT)
+        _clean_work_root()
         self.input_dir = WORK_ROOT / "silence_input"
         self.normalize_out = WORK_ROOT / "silence_normalize_out"
         self.silence_wav = self.input_dir / "silence.wav"
         _generate_silence(self.silence_wav)
+
+    def tearDown(self) -> None:
+        _clean_work_root()
 
     def test_normalize_fails_on_silence(self) -> None:
         norm_rows = normalize_directory(
