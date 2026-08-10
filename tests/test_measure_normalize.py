@@ -53,6 +53,33 @@ def _generate_sine(dst: Path, *, volume_db: float, duration: float = 3.0) -> Non
         raise RuntimeError(f"sine WAV の生成に失敗しました: {detail}")
 
 
+def _generate_silence(dst: Path, *, duration: float = 3.0) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = require_ffmpeg()
+    result = subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-nostats",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=mono",
+            "-t",
+            str(duration),
+            "-c:a",
+            "pcm_s16le",
+            str(dst),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not dst.is_file():
+        detail = (result.stderr or result.stdout or f"exit {result.returncode}").strip()[-500:]
+        raise RuntimeError(f"無音 WAV の生成に失敗しました: {detail}")
+
+
 def _rows_by_filename(csv_path: Path) -> dict[str, dict[str, str]]:
     with csv_path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
@@ -158,6 +185,32 @@ class MeasureNormalizeFailureTests(unittest.TestCase):
         self.assertEqual(norm["status"], "error")
         self.assertTrue(norm["error"])
         self.assertFalse((self.normalize_out / "bad.wav").exists())
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
+class SilenceNormalizeFailureTests(unittest.TestCase):
+    def setUp(self) -> None:
+        if WORK_ROOT.exists():
+            shutil.rmtree(WORK_ROOT)
+        self.input_dir = WORK_ROOT / "silence_input"
+        self.normalize_out = WORK_ROOT / "silence_normalize_out"
+        self.silence_wav = self.input_dir / "silence.wav"
+        _generate_silence(self.silence_wav)
+
+    def test_normalize_fails_on_silence(self) -> None:
+        norm_rows = normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            target_i=TARGET_I,
+            target_tp=-1.0,
+            target_lra=7.0,
+        )
+        self.assertEqual(len(norm_rows), 1)
+        norm = norm_rows[0]
+        self.assertEqual(norm["filename"], "silence.wav")
+        self.assertEqual(norm["status"], "error")
+        self.assertTrue(norm["error"])
+        self.assertFalse((self.normalize_out / "silence.wav").exists())
 
 
 if __name__ == "__main__":
