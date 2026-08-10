@@ -68,7 +68,7 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir -t -23 --tp
 
 ## テスト
 
-リポジトリ直下で実行します。一時ファイルは `workspace/test/` に書き出します（gitignore 済み）。
+リポジトリ直下で実行します。一時ファイルは `workspace/test/` に書き出します（gitignore 済み）。Push / Pull Request 時にも GitHub Actions で同じコマンドが走ります。
 
 ```bash
 python -m unittest discover -s tests -v
