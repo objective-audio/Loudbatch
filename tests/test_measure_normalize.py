@@ -120,5 +120,45 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
             )
 
 
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
+class MeasureNormalizeFailureTests(unittest.TestCase):
+    def setUp(self) -> None:
+        if WORK_ROOT.exists():
+            shutil.rmtree(WORK_ROOT)
+        self.input_dir = WORK_ROOT / "fail_input"
+        self.measure_out = WORK_ROOT / "fail_measure_out"
+        self.normalize_out = WORK_ROOT / "fail_normalize_out"
+        self.bad_wav = self.input_dir / "bad.wav"
+
+        self.input_dir.mkdir(parents=True)
+        self.bad_wav.write_bytes(b"not a wav file")
+
+    def test_measure_and_normalize_fail_on_corrupt_wav(self) -> None:
+        measure_csv = self.measure_out / "loudbatch.csv"
+        rows = measure_directory(self.input_dir, measure_csv)
+        self.assertTrue(measure_csv.is_file())
+        self.assertEqual(len(rows), 1)
+
+        by_name = _rows_by_filename(measure_csv)
+        bad = by_name["bad.wav"]
+        self.assertEqual(bad["status"], "error")
+        self.assertTrue(bad["error"])
+        self.assertEqual(bad["integrated_lufs"], "")
+
+        norm_rows = normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            target_i=TARGET_I,
+            target_tp=-1.0,
+            target_lra=7.0,
+        )
+        self.assertEqual(len(norm_rows), 1)
+        norm = norm_rows[0]
+        self.assertEqual(norm["filename"], "bad.wav")
+        self.assertEqual(norm["status"], "error")
+        self.assertTrue(norm["error"])
+        self.assertFalse((self.normalize_out / "bad.wav").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
