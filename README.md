@@ -66,6 +66,14 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir -t -23 --tp
 
 `.wav` `.flac` `.aiff` `.aif` `.mp3` `.m4a` `.aac` `.ogg` `.opus`
 
+## テスト
+
+リポジトリ直下で実行します。一時ファイルは `workspace/test/` に書き出します（gitignore 済み）。Push / Pull Request 時にも GitHub Actions で同じコマンドが走ります。
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ## 補足
 
 - 正規化は ffmpeg `loudnorm` の 2 パス（計測 → `linear=true` 適用）です。
