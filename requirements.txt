@@ -1,0 +1,2 @@
+# Python 標準ライブラリのみを使用します。
+# 実行にはシステムに ffmpeg が必要です（macOS: brew install ffmpeg）。
