@@ -3,22 +3,28 @@
 from __future__ import annotations
 
 import csv
+import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-AUDIO_EXTENSIONS = {
+PCM_EXTENSIONS = {
     ".wav",
-    ".flac",
     ".aiff",
     ".aif",
+}
+
+REJECTED_AUDIO_EXTENSIONS = {
+    ".flac",
     ".mp3",
     ".m4a",
     ".aac",
     ".ogg",
     ".opus",
 }
+
+AUDIO_EXTENSIONS = PCM_EXTENSIONS | REJECTED_AUDIO_EXTENSIONS
 
 CSV_FIELDNAMES = [
     "filename",
@@ -38,6 +44,64 @@ def require_ffmpeg() -> str:
             "ffmpeg が見つかりません。Homebrew なら `brew install ffmpeg` を実行してください。"
         )
     return path
+
+
+def require_ffprobe() -> str:
+    path = shutil.which("ffprobe")
+    if not path:
+        raise SystemExit(
+            "ffprobe が見つかりません。Homebrew なら `brew install ffmpeg` を実行してください。"
+        )
+    return path
+
+
+def probe_audio_stream(path: Path) -> Optional[Dict[str, Any]]:
+    """Return the first audio stream metadata from ffprobe, or None on failure."""
+    ffprobe = require_ffprobe()
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-hide_banner",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "a:0",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    streams = payload.get("streams") or []
+    if not streams:
+        return None
+    stream = streams[0]
+    return stream if isinstance(stream, dict) else None
+
+
+def validate_linear_pcm(path: Path) -> Optional[str]:
+    """Return an error message if the file is not linear PCM; otherwise None."""
+    ext = path.suffix.lower()
+    if ext not in PCM_EXTENSIONS:
+        return f"リニアPCM以外の形式はサポートしていません ({ext})"
+
+    stream = probe_audio_stream(path)
+    if not stream:
+        return "音声ストリームを取得できませんでした"
+
+    codec_name = str(stream.get("codec_name") or "")
+    if not codec_name.startswith("pcm_"):
+        label = codec_name or "unknown"
+        return f"リニアPCM以外のコーデックはサポートしていません ({label})"
+    return None
 
 
 def iter_audio_files(directory: Path, recursive: bool = False) -> List[Path]:

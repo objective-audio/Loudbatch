@@ -64,7 +64,9 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir -t -23 --tp
 
 ## 対応拡張子
 
-`.wav` `.flac` `.aiff` `.aif` `.mp3` `.m4a` `.aac` `.ogg` `.opus`
+リニア PCM のみ: `.wav` `.aiff` `.aif`
+
+`.flac` `.mp3` `.m4a` `.aac` `.ogg` `.opus` などの圧縮形式は発見時に `status=error` になります。WAV/AIFF でも非 PCM コーデックは同様にエラーです。
 
 ## テスト
 
@@ -77,4 +79,4 @@ python -m unittest discover -s tests -v
 ## 補足
 
 - 正規化は ffmpeg `loudnorm` の 2 パス（計測 → `linear=true` 適用）です。
-- WAV は `pcm_s24le`、可逆系は可逆コーデック、損失系は高め品質で再エンコードします。
+- リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します（`loudnorm` 後も元のサンプルレートへ戻します）。

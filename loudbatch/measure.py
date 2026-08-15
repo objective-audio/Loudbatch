@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .io_utils import iter_audio_files, print_summary, run_ffmpeg, write_csv
+from .io_utils import iter_audio_files, print_summary, run_ffmpeg, validate_linear_pcm, write_csv
 
 # Final summary lines look like:
 #   I:         -23.0 LUFS
@@ -51,6 +51,11 @@ def measure_file(path: Path) -> Dict[str, object]:
         "status": "error",
         "error": "",
     }
+    pcm_error = validate_linear_pcm(path)
+    if pcm_error:
+        row["error"] = pcm_error
+        return row
+
     try:
         result = run_ffmpeg(
             [
