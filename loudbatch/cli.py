@@ -52,18 +52,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="目標 Integrated ラウドネス（LUFS、デフォルト: -23）",
     )
     normalize_p.add_argument(
-        "--tp",
-        type=float,
-        default=-1.0,
-        help="True Peak 上限（dBTP、デフォルト: -1.0）",
-    )
-    normalize_p.add_argument(
-        "--lra",
-        type=float,
-        default=7.0,
-        help="Loudness Range 目標（LU、デフォルト: 7）",
-    )
-    normalize_p.add_argument(
         "-r",
         "--recursive",
         action="store_true",
@@ -96,8 +84,6 @@ def main(argv: list[str] | None = None) -> int:
             input_dir,
             output_dir,
             target_i=args.target,
-            target_tp=args.tp,
-            target_lra=args.lra,
             recursive=args.recursive,
         )
         return 0
