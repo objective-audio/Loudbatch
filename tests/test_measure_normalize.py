@@ -11,9 +11,11 @@ from pathlib import Path
 from loudbatch.io_utils import (
     CSV_FIELDNAMES,
     NORMALIZE_CSV_FIELDNAMES,
+    load_targets_csv,
     probe_audio_stream,
     require_ffmpeg,
     validate_linear_pcm,
+    write_csv,
 )
 from loudbatch.measure import measure_directory
 from loudbatch.normalize import normalize_directory, pcm_codec_from_stream
@@ -143,6 +145,23 @@ def _generate_silence(dst: Path, *, duration: float = 3.0) -> None:
         raise RuntimeError(f"無音 WAV の生成に失敗しました: {detail}")
 
 
+def _write_targets_csv(path: Path, targets: dict[str, float]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_csv(
+        path,
+        [
+            {
+                "filename": name,
+                "integrated_lufs": value,
+                "status": "ok",
+                "error": "",
+            }
+            for name, value in targets.items()
+        ],
+    )
+    return path
+
+
 def _rows_by_filename(
     csv_path: Path,
     fieldnames: list[str] | None = None,
@@ -152,6 +171,63 @@ def _rows_by_filename(
         reader = csv.DictReader(fh)
         assert reader.fieldnames == expected
         return {row["filename"]: row for row in reader}
+
+
+class LoadTargetsCsvTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.csv_path = WORK_ROOT / "targets.csv"
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_loads_ok_rows_and_skips_errors(self) -> None:
+        write_csv(
+            self.csv_path,
+            [
+                {
+                    "filename": "keep.wav",
+                    "integrated_lufs": -18.5,
+                    "status": "ok",
+                    "error": "",
+                },
+                {
+                    "filename": "bad.wav",
+                    "integrated_lufs": "",
+                    "status": "error",
+                    "error": "計測に失敗しました",
+                },
+            ],
+        )
+        targets = load_targets_csv(self.csv_path)
+        self.assertEqual(targets, {"keep.wav": -18.5})
+
+    def test_rejects_duplicate_filenames(self) -> None:
+        write_csv(
+            self.csv_path,
+            [
+                {
+                    "filename": "dup.wav",
+                    "integrated_lufs": -23.0,
+                    "status": "ok",
+                    "error": "",
+                },
+                {
+                    "filename": "dup.wav",
+                    "integrated_lufs": -18.0,
+                    "status": "ok",
+                    "error": "",
+                },
+            ],
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            load_targets_csv(self.csv_path)
+        self.assertIn("同じファイル名", str(ctx.exception))
+
+    def test_missing_file(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            load_targets_csv(self.csv_path)
+        self.assertIn("見つかりません", str(ctx.exception))
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
@@ -193,7 +269,10 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         normalize_directory(
             self.input_dir,
             self.normalize_out,
-            target_i=TARGET_I,
+            csv_path=_write_targets_csv(
+                WORK_ROOT / "targets.csv",
+                {"loud.wav": TARGET_I, "quiet.wav": TARGET_I},
+            ),
         )
         self.assertTrue((self.normalize_out / "loud.wav").is_file())
         self.assertTrue((self.normalize_out / "quiet.wav").is_file())
@@ -223,6 +302,91 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
+class NormalizeToMeasureCsvTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.reference_dir = WORK_ROOT / "reference"
+        self.input_dir = WORK_ROOT / "processed"
+        self.measure_out = WORK_ROOT / "reference_measure_out"
+        self.normalize_out = WORK_ROOT / "match_normalize_out"
+        self.remeasure_out = WORK_ROOT / "match_remeasure_out"
+        _generate_sine(self.reference_dir / "loud.wav", volume_db=6.0)
+        _generate_sine(self.reference_dir / "quiet.wav", volume_db=-36.0)
+        _generate_sine(self.input_dir / "loud.wav", volume_db=-12.0)
+        _generate_sine(self.input_dir / "quiet.wav", volume_db=-6.0)
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_normalize_matches_measured_reference_values(self) -> None:
+        measure_csv = self.measure_out / "loudbatch.csv"
+        measure_directory(self.reference_dir, measure_csv)
+        ref_by_name = _rows_by_filename(measure_csv)
+
+        normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            csv_path=measure_csv,
+        )
+        self.assertTrue((self.normalize_out / "loud.wav").is_file())
+        self.assertTrue((self.normalize_out / "quiet.wav").is_file())
+
+        normalize_csv = self.normalize_out / "loudbatch_normalize.csv"
+        norm_by_name = _rows_by_filename(
+            normalize_csv,
+            fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
+        )
+        self.assertEqual(
+            float(norm_by_name["loud.wav"]["target_lufs"]),
+            float(ref_by_name["loud.wav"]["integrated_lufs"]),
+        )
+        self.assertEqual(
+            float(norm_by_name["quiet.wav"]["target_lufs"]),
+            float(ref_by_name["quiet.wav"]["integrated_lufs"]),
+        )
+
+        rem_csv = self.remeasure_out / "loudbatch.csv"
+        measure_directory(self.normalize_out, rem_csv)
+        rem_by_name = _rows_by_filename(rem_csv)
+        for name in ("loud.wav", "quiet.wav"):
+            target = float(ref_by_name[name]["integrated_lufs"])
+            integrated = float(rem_by_name[name]["integrated_lufs"])
+            self.assertLessEqual(
+                abs(integrated - target),
+                TOLERANCE_LU,
+                msg=f"{name} I={integrated} (target {target} ± {TOLERANCE_LU})",
+            )
+
+
+class MissingCsvTargetTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.input_dir = WORK_ROOT / "missing_target_input"
+        self.normalize_out = WORK_ROOT / "missing_target_out"
+        self.input_dir.mkdir(parents=True)
+        (self.input_dir / "tone.wav").write_bytes(b"not a wav file")
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_normalize_errors_when_filename_missing_from_csv(self) -> None:
+        csv_path = _write_targets_csv(
+            WORK_ROOT / "other.csv",
+            {"other.wav": TARGET_I},
+        )
+        rows = normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            csv_path=csv_path,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["filename"], "tone.wav")
+        self.assertEqual(rows[0]["status"], "error")
+        self.assertIn("目標値", str(rows[0]["error"]))
+        self.assertFalse((self.normalize_out / "tone.wav").exists())
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
 class PreservePcmFormatTests(unittest.TestCase):
     def setUp(self) -> None:
         _clean_work_root()
@@ -244,7 +408,10 @@ class PreservePcmFormatTests(unittest.TestCase):
         normalize_directory(
             self.input_dir,
             self.normalize_out,
-            target_i=TARGET_I,
+            csv_path=_write_targets_csv(
+                WORK_ROOT / "pcm_targets.csv",
+                {name: TARGET_I for name in cases},
+            ),
         )
 
         for name, codec in cases.items():
@@ -286,7 +453,10 @@ class CompressedFormatRejectionTests(unittest.TestCase):
         norm_rows = normalize_directory(
             self.input_dir,
             self.normalize_out,
-            target_i=TARGET_I,
+            csv_path=_write_targets_csv(
+                WORK_ROOT / "mp3_targets.csv",
+                {"tone.mp3": TARGET_I},
+            ),
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
@@ -326,7 +496,10 @@ class MeasureNormalizeFailureTests(unittest.TestCase):
         norm_rows = normalize_directory(
             self.input_dir,
             self.normalize_out,
-            target_i=TARGET_I,
+            csv_path=_write_targets_csv(
+                WORK_ROOT / "bad_targets.csv",
+                {"bad.wav": TARGET_I},
+            ),
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
@@ -352,7 +525,10 @@ class SilenceNormalizeFailureTests(unittest.TestCase):
         norm_rows = normalize_directory(
             self.input_dir,
             self.normalize_out,
-            target_i=TARGET_I,
+            csv_path=_write_targets_csv(
+                WORK_ROOT / "silence_targets.csv",
+                {"silence.wav": TARGET_I},
+            ),
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
@@ -380,7 +556,10 @@ class PeakOverCsvTests(unittest.TestCase):
         rows = normalize_directory(
             self.input_dir,
             self.normalize_out,
-            target_i=boost_target,
+            csv_path=_write_targets_csv(
+                WORK_ROOT / "peak_targets.csv",
+                {"quiet.wav": boost_target},
+            ),
         )
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["status"], "ok")

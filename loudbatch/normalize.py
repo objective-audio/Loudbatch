@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional
 from .io_utils import (
     NORMALIZE_CSV_FIELDNAMES,
     iter_audio_files,
+    load_targets_csv,
     print_summary,
     probe_audio_stream,
     relative_under,
@@ -138,6 +139,7 @@ def _empty_normalize_row(src: Path, dst: Path) -> Dict[str, object]:
         "status": "error",
         "error": "",
         "integrated_lufs": "",
+        "target_lufs": "",
         "gain_db": "",
         "sample_peak_db": "",
         "true_peak_db": "",
@@ -153,6 +155,7 @@ def normalize_file(
     target_i: float,
 ) -> Dict[str, object]:
     row = _empty_normalize_row(src, dst)
+    row["target_lufs"] = target_i
 
     pcm_error = validate_linear_pcm(src)
     if pcm_error:
@@ -232,9 +235,10 @@ def normalize_directory(
     input_dir: Path,
     output_dir: Path,
     *,
-    target_i: float = -23.0,
+    csv_path: Path,
     recursive: bool = False,
 ) -> List[Dict[str, object]]:
+    targets = load_targets_csv(csv_path)
     output_csv = output_dir / "loudbatch_normalize.csv"
     files = iter_audio_files(input_dir, recursive=recursive)
     if not files:
@@ -252,6 +256,14 @@ def normalize_directory(
         rel = relative_under(input_dir, src)
         dst = (output_dir / rel).resolve()
         print(f"正規化中: {src.name} → {dst}")
+        target_i = targets.get(src.name)
+        if target_i is None:
+            row = _empty_normalize_row(src, dst)
+            row["error"] = "CSV に目標値がありません"
+            rows.append(row)
+            failed += 1
+            print(f"  失敗: {row['error']}")
+            continue
         row = normalize_file(
             src,
             dst,
