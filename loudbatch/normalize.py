@@ -128,7 +128,7 @@ def measure_sample_peak_db(path: Path) -> Optional[float]:
 def _peak_over_flag(peak_db: Optional[float]) -> str:
     if peak_db is None or not math.isfinite(peak_db):
         return ""
-    return "yes" if peak_db > 0.0 else "no"
+    return "over" if peak_db > 0.0 else ""
 
 
 def _empty_normalize_row(src: Path) -> Dict[str, object]:
@@ -271,12 +271,12 @@ def normalize_directory(
         if row["status"] == "ok":
             ok += 1
             print("  完了")
-            if row.get("sample_peak_over") == "yes":
+            if row.get("sample_peak_over") == "over":
                 print(
                     f"  警告: サンプルピークが 0 dBFS を超えます"
                     f" ({row.get('sample_peak_db')} dBFS)"
                 )
-            if row.get("true_peak_over") == "yes":
+            if row.get("true_peak_over") == "over":
                 print(
                     f"  警告: True Peak が 0 dBTP を超えます"
                     f" ({row.get('true_peak_db')} dBTP)"

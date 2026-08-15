@@ -282,8 +282,8 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
             normalize_csv,
             fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
         )
-        self.assertEqual(norm_by_name["loud.wav"]["sample_peak_over"], "no")
-        self.assertEqual(norm_by_name["loud.wav"]["true_peak_over"], "no")
+        self.assertEqual(norm_by_name["loud.wav"]["sample_peak_over"], "")
+        self.assertEqual(norm_by_name["loud.wav"]["true_peak_over"], "")
 
         remeasure_csv = self.remeasure_out / "loudbatch.csv"
         rem_rows = measure_directory(self.normalize_out, remeasure_csv)
@@ -573,8 +573,8 @@ class PeakOverCsvTests(unittest.TestCase):
         )
         row = by_name["quiet.wav"]
         self.assertEqual(row["status"], "ok")
-        self.assertEqual(row["sample_peak_over"], "yes")
-        self.assertEqual(row["true_peak_over"], "yes")
+        self.assertEqual(row["sample_peak_over"], "over")
+        self.assertEqual(row["true_peak_over"], "over")
         self.assertGreater(float(row["sample_peak_db"]), 0.0)
         self.assertGreater(float(row["true_peak_db"]), 0.0)
 
