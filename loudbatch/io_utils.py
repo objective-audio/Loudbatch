@@ -36,8 +36,6 @@ CSV_FIELDNAMES = [
 
 NORMALIZE_CSV_FIELDNAMES = [
     "filename",
-    "path",
-    "output",
     "status",
     "error",
     "integrated_lufs",

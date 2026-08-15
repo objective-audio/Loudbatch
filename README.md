@@ -64,8 +64,6 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | 列 | 内容 |
 | --- | --- |
 | `filename` | ファイル名 |
-| `path` | 入力の絶対パス |
-| `output` | 出力ファイルの絶対パス |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
 | `integrated_lufs` | 入力の Integrated（LUFS） |

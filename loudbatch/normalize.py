@@ -131,11 +131,9 @@ def _peak_over_flag(peak_db: Optional[float]) -> str:
     return "yes" if peak_db > 0.0 else "no"
 
 
-def _empty_normalize_row(src: Path, dst: Path) -> Dict[str, object]:
+def _empty_normalize_row(src: Path) -> Dict[str, object]:
     return {
         "filename": src.name,
-        "path": str(src),
-        "output": str(dst),
         "status": "error",
         "error": "",
         "integrated_lufs": "",
@@ -154,7 +152,7 @@ def normalize_file(
     *,
     target_i: float,
 ) -> Dict[str, object]:
-    row = _empty_normalize_row(src, dst)
+    row = _empty_normalize_row(src)
     row["target_lufs"] = target_i
 
     pcm_error = validate_linear_pcm(src)
@@ -258,7 +256,7 @@ def normalize_directory(
         print(f"正規化中: {src.name} → {dst}")
         target_i = targets.get(src.name)
         if target_i is None:
-            row = _empty_normalize_row(src, dst)
+            row = _empty_normalize_row(src)
             row["error"] = "CSV に目標値がありません"
             rows.append(row)
             failed += 1
