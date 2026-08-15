@@ -9,17 +9,22 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-AUDIO_EXTENSIONS = {
+PCM_EXTENSIONS = {
     ".wav",
-    ".flac",
     ".aiff",
     ".aif",
+}
+
+REJECTED_AUDIO_EXTENSIONS = {
+    ".flac",
     ".mp3",
     ".m4a",
     ".aac",
     ".ogg",
     ".opus",
 }
+
+AUDIO_EXTENSIONS = PCM_EXTENSIONS | REJECTED_AUDIO_EXTENSIONS
 
 CSV_FIELDNAMES = [
     "filename",
@@ -80,6 +85,23 @@ def probe_audio_stream(path: Path) -> Optional[Dict[str, Any]]:
         return None
     stream = streams[0]
     return stream if isinstance(stream, dict) else None
+
+
+def validate_linear_pcm(path: Path) -> Optional[str]:
+    """Return an error message if the file is not linear PCM; otherwise None."""
+    ext = path.suffix.lower()
+    if ext not in PCM_EXTENSIONS:
+        return f"リニアPCM以外の形式はサポートしていません ({ext})"
+
+    stream = probe_audio_stream(path)
+    if not stream:
+        return "音声ストリームを取得できませんでした"
+
+    codec_name = str(stream.get("codec_name") or "")
+    if not codec_name.startswith("pcm_"):
+        label = codec_name or "unknown"
+        return f"リニアPCM以外のコーデックはサポートしていません ({label})"
+    return None
 
 
 def iter_audio_files(directory: Path, recursive: bool = False) -> List[Path]:

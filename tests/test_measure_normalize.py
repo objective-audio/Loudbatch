@@ -8,7 +8,12 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from loudbatch.io_utils import CSV_FIELDNAMES, probe_audio_stream, require_ffmpeg
+from loudbatch.io_utils import (
+    CSV_FIELDNAMES,
+    probe_audio_stream,
+    require_ffmpeg,
+    validate_linear_pcm,
+)
 from loudbatch.measure import measure_directory
 from loudbatch.normalize import normalize_directory, pcm_codec_from_stream
 
@@ -99,6 +104,16 @@ class PcmCodecFromStreamTests(unittest.TestCase):
             pcm_codec_from_stream(".wav", {}),
             "pcm_s24le",
         )
+
+
+class ValidateLinearPcmTests(unittest.TestCase):
+    def test_rejected_extension_message(self) -> None:
+        err = validate_linear_pcm(Path("sample.mp3"))
+        self.assertIsNotNone(err)
+        assert err is not None
+        self.assertIn(".mp3", err)
+        self.assertIn("リニアPCM以外の形式", err)
+
 
 def _generate_silence(dst: Path, *, duration: float = 3.0) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -234,6 +249,44 @@ class PreservePcmFormatTests(unittest.TestCase):
             self.assertEqual(dst.get("sample_fmt"), src.get("sample_fmt"))
             self.assertEqual(dst.get("sample_rate"), src.get("sample_rate"))
             self.assertEqual(dst.get("channels"), src.get("channels"))
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
+class CompressedFormatRejectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.input_dir = WORK_ROOT / "compressed_input"
+        self.measure_out = WORK_ROOT / "compressed_measure_out"
+        self.normalize_out = WORK_ROOT / "compressed_normalize_out"
+        self.mp3_path = self.input_dir / "tone.mp3"
+        _generate_sine(self.mp3_path, volume_db=-6.0, codec="libmp3lame")
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_measure_and_normalize_reject_mp3(self) -> None:
+        measure_csv = self.measure_out / "loudbatch.csv"
+        rows = measure_directory(self.input_dir, measure_csv)
+        self.assertEqual(len(rows), 1)
+        by_name = _rows_by_filename(measure_csv)
+        row = by_name["tone.mp3"]
+        self.assertEqual(row["status"], "error")
+        self.assertIn(".mp3", row["error"])
+        self.assertEqual(row["integrated_lufs"], "")
+
+        norm_rows = normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            target_i=TARGET_I,
+            target_tp=-1.0,
+            target_lra=7.0,
+        )
+        self.assertEqual(len(norm_rows), 1)
+        norm = norm_rows[0]
+        self.assertEqual(norm["filename"], "tone.mp3")
+        self.assertEqual(norm["status"], "error")
+        self.assertIn(".mp3", str(norm["error"]))
+        self.assertFalse((self.normalize_out / "tone.mp3").exists())
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")

@@ -13,6 +13,7 @@ from .io_utils import (
     probe_audio_stream,
     relative_under,
     run_ffmpeg,
+    validate_linear_pcm,
 )
 
 _JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
@@ -86,24 +87,12 @@ def pcm_codec_from_stream(ext: str, stream: Mapping[str, Any]) -> str:
 
 
 def output_codec_args(src: Path, stream: Optional[Mapping[str, Any]] = None) -> List[str]:
-    """Choose encoder args based on source extension (and PCM format when applicable)."""
+    """Choose PCM encoder args based on source extension and stream format."""
     ext = src.suffix.lower()
-    if ext == ".wav" or ext in {".aiff", ".aif"}:
-        probed = stream if stream is not None else probe_audio_stream(src)
-        if probed:
-            return ["-c:a", pcm_codec_from_stream(ext, probed)]
-        return ["-c:a", _with_pcm_endian("pcm_s24", _pcm_endian_for_ext(ext))]
-    if ext == ".flac":
-        return ["-c:a", "flac"]
-    if ext == ".mp3":
-        return ["-c:a", "libmp3lame", "-q:a", "0"]
-    if ext in {".m4a", ".aac"}:
-        return ["-c:a", "aac", "-b:a", "256k"]
-    if ext == ".ogg":
-        return ["-c:a", "libvorbis", "-q:a", "6"]
-    if ext == ".opus":
-        return ["-c:a", "libopus", "-b:a", "192k"]
-    return ["-c:a", "pcm_s24le"]
+    probed = stream if stream is not None else probe_audio_stream(src)
+    if probed:
+        return ["-c:a", pcm_codec_from_stream(ext, probed)]
+    return ["-c:a", _with_pcm_endian("pcm_s24", _pcm_endian_for_ext(ext))]
 
 
 def output_encode_args(src: Path) -> List[str]:
@@ -157,6 +146,10 @@ def normalize_file(
     target_tp: float,
     target_lra: float,
 ) -> Tuple[bool, str]:
+    pcm_error = validate_linear_pcm(src)
+    if pcm_error:
+        return False, pcm_error
+
     # Pass 1: measure
     pass1 = run_ffmpeg(
         [
