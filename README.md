@@ -1,6 +1,6 @@
 # Loudbatch
 
-フォルダ内の音声ファイルについて、ITU-R BS.1770 の **Integrated ラウドネス（LUFS）** を計測して CSV に書き出す CLI と、目標 LUFS へ正規化して別フォルダへ書き出す CLI です。計測・正規化は [ffmpeg](https://ffmpeg.org/) の `ebur128` / `loudnorm` フィルタを使います。
+フォルダ内の音声ファイルについて、ITU-R BS.1770 の **Integrated ラウドネス（LUFS）** を計測して CSV に書き出す CLI と、目標 LUFS へ正規化して別フォルダへ書き出す CLI です。計測は [ffmpeg](https://ffmpeg.org/) の `ebur128`、正規化は計測結果に基づく `volume` ゲインを使います。
 
 ## 前提
 
@@ -50,17 +50,15 @@ CSV 列:
 
 ```bash
 python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir
-python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir -t -23 --tp -1.0 --lra 7
+python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir -t -23
 ```
 
 | 引数 | デフォルト | 意味 |
 | --- | --- | --- |
 | `-t` / `--target` | `-23` | 目標 Integrated（LUFS） |
-| `--tp` | `-1.0` | True Peak 上限（dBTP） |
-| `--lra` | `7` | Loudness Range 目標（LU） |
 | `-r` / `--recursive` | off | サブフォルダも対象 |
 
-元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。
+元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
 
 ## 対応拡張子
 
@@ -78,5 +76,5 @@ python -m unittest discover -s tests -v
 
 ## 補足
 
-- 正規化は ffmpeg `loudnorm` の 2 パス（計測 → `linear=true` 適用）です。
-- リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します（`loudnorm` 後も元のサンプルレートへ戻します）。
+- 正規化は ebur128 で Integrated を計測し、目標との差を `volume` ゲインで適用します（ピーク制限なし。整数 PCM ではクリップし得ます）。
+- リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します。

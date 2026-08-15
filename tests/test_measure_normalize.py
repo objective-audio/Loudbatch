@@ -189,8 +189,6 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
             self.input_dir,
             self.normalize_out,
             target_i=TARGET_I,
-            target_tp=-1.0,
-            target_lra=7.0,
         )
         self.assertTrue((self.normalize_out / "loud.wav").is_file())
         self.assertTrue((self.normalize_out / "quiet.wav").is_file())
@@ -234,8 +232,6 @@ class PreservePcmFormatTests(unittest.TestCase):
             self.input_dir,
             self.normalize_out,
             target_i=TARGET_I,
-            target_tp=-1.0,
-            target_lra=7.0,
         )
 
         for name, codec in cases.items():
@@ -278,8 +274,6 @@ class CompressedFormatRejectionTests(unittest.TestCase):
             self.input_dir,
             self.normalize_out,
             target_i=TARGET_I,
-            target_tp=-1.0,
-            target_lra=7.0,
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
@@ -320,8 +314,6 @@ class MeasureNormalizeFailureTests(unittest.TestCase):
             self.input_dir,
             self.normalize_out,
             target_i=TARGET_I,
-            target_tp=-1.0,
-            target_lra=7.0,
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
@@ -348,8 +340,6 @@ class SilenceNormalizeFailureTests(unittest.TestCase):
             self.input_dir,
             self.normalize_out,
             target_i=TARGET_I,
-            target_tp=-1.0,
-            target_lra=7.0,
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]

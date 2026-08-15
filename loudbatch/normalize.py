@@ -1,9 +1,8 @@
-"""Two-pass loudness normalization using ffmpeg loudnorm."""
+"""Loudness normalization via ebur128 measure + linear volume gain."""
 
 from __future__ import annotations
 
-import json
-import re
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -15,8 +14,7 @@ from .io_utils import (
     run_ffmpeg,
     validate_linear_pcm,
 )
-
-_JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
+from .measure import measure_file
 
 _PCM_BASE_FROM_SAMPLE_FMT = {
     "u8": "pcm_u8",
@@ -31,19 +29,6 @@ _PCM_BASE_FROM_SAMPLE_FMT = {
     "dbl": "pcm_f64",
     "dblp": "pcm_f64",
 }
-
-
-def parse_loudnorm_json(stderr: str) -> Dict[str, str]:
-    """Extract the loudnorm measurement JSON object from ffmpeg stderr."""
-    matches = _JSON_OBJECT_RE.findall(stderr or "")
-    for blob in reversed(matches):
-        try:
-            data = json.loads(blob)
-        except json.JSONDecodeError:
-            continue
-        if "input_i" in data and "input_tp" in data:
-            return {k: str(v) for k, v in data.items()}
-    raise ValueError("loudnorm 計測 JSON が見つかりませんでした")
 
 
 def _pcm_endian_for_ext(ext: str) -> str:
@@ -96,7 +81,7 @@ def output_codec_args(src: Path, stream: Optional[Mapping[str, Any]] = None) -> 
 
 
 def output_encode_args(src: Path) -> List[str]:
-    """Encoder args plus sample-rate/channel restoration after loudnorm."""
+    """Encoder args plus sample-rate/channel preservation."""
     stream = probe_audio_stream(src)
     args = output_codec_args(src, stream)
     if not stream:
@@ -110,72 +95,39 @@ def output_encode_args(src: Path) -> List[str]:
     return args
 
 
-def _loudnorm_filter(
-    target_i: float,
-    target_tp: float,
-    target_lra: float,
-    measured: Optional[Dict[str, str]] = None,
-) -> str:
-    parts = [
-        f"I={target_i}",
-        f"TP={target_tp}",
-        f"LRA={target_lra}",
-    ]
-    if measured is None:
-        parts.append("print_format=json")
-    else:
-        parts.extend(
-            [
-                f"measured_I={measured['input_i']}",
-                f"measured_TP={measured['input_tp']}",
-                f"measured_LRA={measured['input_lra']}",
-                f"measured_thresh={measured['input_thresh']}",
-                f"offset={measured['target_offset']}",
-                "linear=true",
-                "print_format=summary",
-            ]
-        )
-    return "loudnorm=" + ":".join(parts)
-
-
 def normalize_file(
     src: Path,
     dst: Path,
     *,
     target_i: float,
-    target_tp: float,
-    target_lra: float,
 ) -> Tuple[bool, str]:
     pcm_error = validate_linear_pcm(src)
     if pcm_error:
         return False, pcm_error
 
-    # Pass 1: measure
-    pass1 = run_ffmpeg(
-        [
-            "-hide_banner",
-            "-nostats",
-            "-i",
-            str(src),
-            "-af",
-            _loudnorm_filter(target_i, target_tp, target_lra),
-            "-f",
-            "null",
-            "-",
-        ]
-    )
+    measured = measure_file(src)
+    if measured["status"] != "ok":
+        return False, str(measured.get("error") or "計測に失敗しました")
+
     try:
-        measured = parse_loudnorm_json(pass1.stderr or "")
-    except ValueError as exc:
-        detail = (pass1.stderr or pass1.stdout or str(exc)).strip()[-500:]
-        return False, detail
+        integrated = float(measured["integrated_lufs"])  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False, "Integrated ラウドネスを取得できませんでした"
+
+    if not math.isfinite(integrated):
+        return False, "Integrated ラウドネスが無効です（無音など）"
+
+    # ebur128 absolute gate floor; pure silence typically reports -70.0 LUFS
+    if integrated <= -70.0:
+        return False, "Integrated ラウドネスが無効です（無音など）"
+
+    gain_db = target_i - integrated
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
         dst.unlink()
 
-    # Pass 2: apply linear normalization
-    pass2 = run_ffmpeg(
+    result = run_ffmpeg(
         [
             "-hide_banner",
             "-nostats",
@@ -183,13 +135,13 @@ def normalize_file(
             "-i",
             str(src),
             "-af",
-            _loudnorm_filter(target_i, target_tp, target_lra, measured),
+            f"volume={gain_db}dB",
             *output_encode_args(src),
             str(dst),
         ]
     )
-    if pass2.returncode != 0 or not dst.is_file():
-        detail = (pass2.stderr or pass2.stdout or f"exit {pass2.returncode}").strip()[-500:]
+    if result.returncode != 0 or not dst.is_file():
+        detail = (result.stderr or result.stdout or f"exit {result.returncode}").strip()[-500:]
         return False, detail
     return True, ""
 
@@ -199,8 +151,6 @@ def normalize_directory(
     output_dir: Path,
     *,
     target_i: float = -23.0,
-    target_tp: float = -1.0,
-    target_lra: float = 7.0,
     recursive: bool = False,
 ) -> List[Dict[str, object]]:
     files = iter_audio_files(input_dir, recursive=recursive)
@@ -222,8 +172,6 @@ def normalize_directory(
             src,
             dst,
             target_i=target_i,
-            target_tp=target_tp,
-            target_lra=target_lra,
         )
         row: Dict[str, object] = {
             "filename": src.name,
