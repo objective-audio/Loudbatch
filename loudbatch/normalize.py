@@ -5,11 +5,31 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from .io_utils import iter_audio_files, print_summary, relative_under, run_ffmpeg
+from .io_utils import (
+    iter_audio_files,
+    print_summary,
+    probe_audio_stream,
+    relative_under,
+    run_ffmpeg,
+)
 
 _JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
+
+_PCM_BASE_FROM_SAMPLE_FMT = {
+    "u8": "pcm_u8",
+    "u8p": "pcm_u8",
+    "s16": "pcm_s16",
+    "s16p": "pcm_s16",
+    "s24": "pcm_s24",
+    "s32": "pcm_s32",
+    "s32p": "pcm_s32",
+    "flt": "pcm_f32",
+    "fltp": "pcm_f32",
+    "dbl": "pcm_f64",
+    "dblp": "pcm_f64",
+}
 
 
 def parse_loudnorm_json(stderr: str) -> Dict[str, str]:
@@ -25,13 +45,54 @@ def parse_loudnorm_json(stderr: str) -> Dict[str, str]:
     raise ValueError("loudnorm 計測 JSON が見つかりませんでした")
 
 
-def output_codec_args(src: Path) -> List[str]:
-    """Choose encoder args based on source extension."""
-    ext = src.suffix.lower()
-    if ext == ".wav":
-        return ["-c:a", "pcm_s24le"]
+def _pcm_endian_for_ext(ext: str) -> str:
     if ext in {".aiff", ".aif"}:
-        return ["-c:a", "pcm_s24be"]
+        return "be"
+    return "le"
+
+
+def _with_pcm_endian(codec: str, endian: str) -> str:
+    if codec == "pcm_u8":
+        return codec
+    if codec.endswith("le") or codec.endswith("be"):
+        return codec[:-2] + endian
+    return f"{codec}{endian}"
+
+
+def pcm_codec_from_stream(ext: str, stream: Mapping[str, Any]) -> str:
+    """Pick a PCM encoder that matches the source stream as closely as possible."""
+    endian = _pcm_endian_for_ext(ext)
+    codec_name = str(stream.get("codec_name") or "")
+    if codec_name.startswith("pcm_"):
+        return _with_pcm_endian(codec_name, endian)
+
+    sample_fmt = str(stream.get("sample_fmt") or "")
+    bits_raw = stream.get("bits_per_raw_sample")
+    bits: Optional[int] = None
+    if bits_raw not in (None, "", "0", 0):
+        try:
+            bits = int(bits_raw)
+        except (TypeError, ValueError):
+            bits = None
+
+    if sample_fmt in {"s32", "s32p"} and bits == 24:
+        return _with_pcm_endian("pcm_s24", endian)
+
+    base = _PCM_BASE_FROM_SAMPLE_FMT.get(sample_fmt)
+    if base:
+        return _with_pcm_endian(base, endian)
+
+    return _with_pcm_endian("pcm_s24", endian)
+
+
+def output_codec_args(src: Path, stream: Optional[Mapping[str, Any]] = None) -> List[str]:
+    """Choose encoder args based on source extension (and PCM format when applicable)."""
+    ext = src.suffix.lower()
+    if ext == ".wav" or ext in {".aiff", ".aif"}:
+        probed = stream if stream is not None else probe_audio_stream(src)
+        if probed:
+            return ["-c:a", pcm_codec_from_stream(ext, probed)]
+        return ["-c:a", _with_pcm_endian("pcm_s24", _pcm_endian_for_ext(ext))]
     if ext == ".flac":
         return ["-c:a", "flac"]
     if ext == ".mp3":
@@ -43,6 +104,21 @@ def output_codec_args(src: Path) -> List[str]:
     if ext == ".opus":
         return ["-c:a", "libopus", "-b:a", "192k"]
     return ["-c:a", "pcm_s24le"]
+
+
+def output_encode_args(src: Path) -> List[str]:
+    """Encoder args plus sample-rate/channel restoration after loudnorm."""
+    stream = probe_audio_stream(src)
+    args = output_codec_args(src, stream)
+    if not stream:
+        return args
+    sample_rate = stream.get("sample_rate")
+    if sample_rate not in (None, ""):
+        args.extend(["-ar", str(sample_rate)])
+    channels = stream.get("channels")
+    if channels not in (None, ""):
+        args.extend(["-ac", str(channels)])
+    return args
 
 
 def _loudnorm_filter(
@@ -115,7 +191,7 @@ def normalize_file(
             str(src),
             "-af",
             _loudnorm_filter(target_i, target_tp, target_lra, measured),
-            *output_codec_args(src),
+            *output_encode_args(src),
             str(dst),
         ]
     )

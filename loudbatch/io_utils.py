@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import csv
+import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 AUDIO_EXTENSIONS = {
     ".wav",
@@ -38,6 +39,47 @@ def require_ffmpeg() -> str:
             "ffmpeg が見つかりません。Homebrew なら `brew install ffmpeg` を実行してください。"
         )
     return path
+
+
+def require_ffprobe() -> str:
+    path = shutil.which("ffprobe")
+    if not path:
+        raise SystemExit(
+            "ffprobe が見つかりません。Homebrew なら `brew install ffmpeg` を実行してください。"
+        )
+    return path
+
+
+def probe_audio_stream(path: Path) -> Optional[Dict[str, Any]]:
+    """Return the first audio stream metadata from ffprobe, or None on failure."""
+    ffprobe = require_ffprobe()
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-hide_banner",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "a:0",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    streams = payload.get("streams") or []
+    if not streams:
+        return None
+    stream = streams[0]
+    return stream if isinstance(stream, dict) else None
 
 
 def iter_audio_files(directory: Path, recursive: bool = False) -> List[Path]:
