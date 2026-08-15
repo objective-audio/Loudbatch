@@ -10,6 +10,7 @@ from pathlib import Path
 
 from loudbatch.io_utils import (
     CSV_FIELDNAMES,
+    NORMALIZE_CSV_FIELDNAMES,
     probe_audio_stream,
     require_ffmpeg,
     validate_linear_pcm,
@@ -142,10 +143,14 @@ def _generate_silence(dst: Path, *, duration: float = 3.0) -> None:
         raise RuntimeError(f"無音 WAV の生成に失敗しました: {detail}")
 
 
-def _rows_by_filename(csv_path: Path) -> dict[str, dict[str, str]]:
+def _rows_by_filename(
+    csv_path: Path,
+    fieldnames: list[str] | None = None,
+) -> dict[str, dict[str, str]]:
+    expected = list(fieldnames) if fieldnames is not None else list(CSV_FIELDNAMES)
     with csv_path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
-        assert reader.fieldnames == list(CSV_FIELDNAMES)
+        assert reader.fieldnames == expected
         return {row["filename"]: row for row in reader}
 
 
@@ -192,6 +197,14 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         )
         self.assertTrue((self.normalize_out / "loud.wav").is_file())
         self.assertTrue((self.normalize_out / "quiet.wav").is_file())
+        normalize_csv = self.normalize_out / "loudbatch_normalize.csv"
+        self.assertTrue(normalize_csv.is_file())
+        norm_by_name = _rows_by_filename(
+            normalize_csv,
+            fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
+        )
+        self.assertEqual(norm_by_name["loud.wav"]["sample_peak_over"], "no")
+        self.assertEqual(norm_by_name["loud.wav"]["true_peak_over"], "no")
 
         remeasure_csv = self.remeasure_out / "loudbatch.csv"
         rem_rows = measure_directory(self.normalize_out, remeasure_csv)
@@ -347,6 +360,44 @@ class SilenceNormalizeFailureTests(unittest.TestCase):
         self.assertEqual(norm["status"], "error")
         self.assertTrue(norm["error"])
         self.assertFalse((self.normalize_out / "silence.wav").exists())
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
+class PeakOverCsvTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.input_dir = WORK_ROOT / "peak_input"
+        self.normalize_out = WORK_ROOT / "peak_normalize_out"
+        self.quiet_wav = self.input_dir / "quiet.wav"
+        _generate_sine(self.quiet_wav, volume_db=-36.0)
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_boost_sets_peak_over_flags_but_still_writes(self) -> None:
+        # Large boost so predicted peaks exceed 0 while still writing output.
+        boost_target = 0.0
+        rows = normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            target_i=boost_target,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "ok")
+        self.assertTrue((self.normalize_out / "quiet.wav").is_file())
+
+        normalize_csv = self.normalize_out / "loudbatch_normalize.csv"
+        self.assertTrue(normalize_csv.is_file())
+        by_name = _rows_by_filename(
+            normalize_csv,
+            fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
+        )
+        row = by_name["quiet.wav"]
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["sample_peak_over"], "yes")
+        self.assertEqual(row["true_peak_over"], "yes")
+        self.assertGreater(float(row["sample_peak_db"]), 0.0)
+        self.assertGreater(float(row["true_peak_db"]), 0.0)
 
 
 if __name__ == "__main__":

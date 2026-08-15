@@ -36,6 +36,20 @@ CSV_FIELDNAMES = [
     "error",
 ]
 
+NORMALIZE_CSV_FIELDNAMES = [
+    "filename",
+    "path",
+    "output",
+    "status",
+    "error",
+    "integrated_lufs",
+    "gain_db",
+    "sample_peak_db",
+    "true_peak_db",
+    "sample_peak_over",
+    "true_peak_over",
+]
+
 
 def require_ffmpeg() -> str:
     path = shutil.which("ffmpeg")
@@ -128,13 +142,17 @@ def relative_under(root: Path, path: Path) -> Path:
         return Path(path.name)
 
 
-def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
+def write_csv(
+    path: Path,
+    rows: Sequence[Mapping[str, object]],
+    fieldnames: Sequence[str] = CSV_FIELDNAMES,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CSV_FIELDNAMES)
+        writer = csv.DictWriter(fh, fieldnames=list(fieldnames))
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: row.get(key, "") for key in CSV_FIELDNAMES})
+            writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 
 def run_ffmpeg(args: Sequence[str], *, check: bool = False) -> subprocess.CompletedProcess:

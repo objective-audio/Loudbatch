@@ -60,6 +60,22 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir -t -23
 
 元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
 
+正規化結果は出力フォルダの `loudbatch_normalize.csv` に記録します。ゲイン適用後の予測ピークが 0 を超える場合もファイルは書き出し、コンソールに警告を出し CSV のフラグで判別できます。
+
+| 列 | 内容 |
+| --- | --- |
+| `filename` | ファイル名 |
+| `path` | 入力の絶対パス |
+| `output` | 出力ファイルの絶対パス |
+| `status` | `ok` / `error` |
+| `error` | 失敗時のメッセージ |
+| `integrated_lufs` | 入力の Integrated（LUFS） |
+| `gain_db` | 適用ゲイン（dB） |
+| `sample_peak_db` | ゲイン適用後の予測サンプルピーク（dBFS） |
+| `true_peak_db` | ゲイン適用後の予測 True Peak（dBTP） |
+| `sample_peak_over` | サンプルピークが 0 dBFS 超なら `yes` |
+| `true_peak_over` | True Peak が 0 dBTP 超なら `yes` |
+
 ## 対応拡張子
 
 リニア PCM のみ: `.wav` `.aiff` `.aif`
@@ -77,4 +93,5 @@ python -m unittest discover -s tests -v
 ## 補足
 
 - 正規化は ebur128 で Integrated を計測し、目標との差を `volume` ゲインで適用します（ピーク制限なし。整数 PCM ではクリップし得ます）。
+- ゲイン適用後にサンプルピーク / True Peak が 0 を超える場合は警告のみ（書き出しは継続）。`loudbatch_normalize.csv` の `sample_peak_over` / `true_peak_over` で確認できます。
 - リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します。
