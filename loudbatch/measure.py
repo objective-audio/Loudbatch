@@ -10,10 +10,8 @@ from .io_utils import iter_audio_files, print_summary, run_ffmpeg, validate_line
 
 # Final summary lines look like:
 #   I:         -23.0 LUFS
-#   LRA:         5.1 LU
 #   Peak:       -1.02 dBFS   (when peak=true; True Peak may appear as True peak)
 _RE_INTEGRATED = re.compile(r"^\s*I:\s*([+-]?\d+(?:\.\d+)?)\s*LUFS", re.MULTILINE)
-_RE_LRA = re.compile(r"^\s*LRA:\s*([+-]?\d+(?:\.\d+)?)\s*LU", re.MULTILINE)
 _RE_TRUE_PEAK = re.compile(
     r"^\s*(?:True peak|Peak):\s*([+-]?\d+(?:\.\d+)?)\s*dB(?:FS|TP)?",
     re.MULTILINE | re.IGNORECASE,
@@ -21,7 +19,7 @@ _RE_TRUE_PEAK = re.compile(
 
 
 def parse_ebur128(stderr: str) -> Dict[str, Optional[float]]:
-    """Parse Integrated / LRA / True Peak from ebur128 stderr summary."""
+    """Parse Integrated / True Peak from ebur128 stderr summary."""
     # Prefer the last Summary block if present (ebur128 prints ongoing + final).
     summary = stderr
     marker = "Summary:"
@@ -36,7 +34,6 @@ def parse_ebur128(stderr: str) -> Dict[str, Optional[float]]:
 
     return {
         "integrated_lufs": _first(_RE_INTEGRATED),
-        "lra": _first(_RE_LRA),
         "true_peak_db": _first(_RE_TRUE_PEAK),
     }
 
@@ -44,9 +41,7 @@ def parse_ebur128(stderr: str) -> Dict[str, Optional[float]]:
 def measure_file(path: Path) -> Dict[str, object]:
     row: Dict[str, object] = {
         "filename": path.name,
-        "path": str(path),
         "integrated_lufs": "",
-        "lra": "",
         "true_peak_db": "",
         "status": "error",
         "error": "",
@@ -82,7 +77,6 @@ def measure_file(path: Path) -> Dict[str, object]:
         return row
 
     row["integrated_lufs"] = parsed["integrated_lufs"]
-    row["lra"] = "" if parsed["lra"] is None else parsed["lra"]
     row["true_peak_db"] = "" if parsed["true_peak_db"] is None else parsed["true_peak_db"]
     row["status"] = "ok"
     return row

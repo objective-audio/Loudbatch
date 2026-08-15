@@ -39,10 +39,7 @@ CSV 列:
 | 列 | 内容 |
 | --- | --- |
 | `filename` | ファイル名 |
-| `path` | 絶対パス |
 | `integrated_lufs` | Integrated ラウドネス（LUFS） |
-| `lra` | Loudness Range（LU） |
-| `true_peak_db` | True Peak（dB） |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
 

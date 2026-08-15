@@ -28,10 +28,7 @@ AUDIO_EXTENSIONS = PCM_EXTENSIONS | REJECTED_AUDIO_EXTENSIONS
 
 CSV_FIELDNAMES = [
     "filename",
-    "path",
     "integrated_lufs",
-    "lra",
-    "true_peak_db",
     "status",
     "error",
 ]
