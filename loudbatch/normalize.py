@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from .io_utils import (
     NORMALIZE_CSV_FIELDNAMES,
+    format_lufs,
     iter_audio_files,
     load_targets_csv,
     print_summary,
@@ -151,7 +152,7 @@ def normalize_file(
     target_i: float,
 ) -> Dict[str, object]:
     row = _empty_normalize_row(src)
-    row["target_lufs"] = target_i
+    row["target_lufs"] = format_lufs(target_i)
 
     pcm_error = validate_linear_pcm(src)
     if pcm_error:
@@ -179,7 +180,7 @@ def normalize_file(
         return row
 
     gain_db = target_i - integrated
-    row["integrated_lufs"] = integrated
+    row["integrated_lufs"] = format_lufs(integrated)
     row["gain_db"] = gain_db
 
     sample_peak_in = measure_sample_peak_db(src)

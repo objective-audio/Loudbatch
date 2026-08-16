@@ -6,7 +6,14 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .io_utils import iter_audio_files, print_summary, run_ffmpeg, validate_linear_pcm, write_csv
+from .io_utils import (
+    format_lufs,
+    iter_audio_files,
+    print_summary,
+    run_ffmpeg,
+    validate_linear_pcm,
+    write_csv,
+)
 
 # Final summary lines look like:
 #   I:         -23.0 LUFS
@@ -70,13 +77,14 @@ def measure_file(path: Path) -> Dict[str, object]:
         return row
 
     parsed = parse_ebur128(result.stderr or "")
-    if parsed["integrated_lufs"] is None:
+    integrated = parsed["integrated_lufs"]
+    if integrated is None:
         detail = (result.stderr or result.stdout or "").strip()
         tail = detail[-500:] if detail else f"exit {result.returncode}"
         row["error"] = f"ebur128 の結果を解析できませんでした: {tail}"
         return row
 
-    row["integrated_lufs"] = parsed["integrated_lufs"]
+    row["integrated_lufs"] = format_lufs(integrated)
     row["true_peak_db"] = "" if parsed["true_peak_db"] is None else parsed["true_peak_db"]
     row["status"] = "ok"
     return row

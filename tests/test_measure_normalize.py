@@ -261,6 +261,8 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         self.assertEqual(loud["status"], "ok")
         self.assertEqual(quiet["status"], "ok")
 
+        self.assertRegex(loud["integrated_lufs"], r"^-?\d+\.\d$")
+        self.assertRegex(quiet["integrated_lufs"], r"^-?\d+\.\d$")
         loud_i = float(loud["integrated_lufs"])
         quiet_i = float(quiet["integrated_lufs"])
         self.assertGreater(loud_i, TARGET_I, msg=f"loud I={loud_i}")

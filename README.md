@@ -39,7 +39,7 @@ CSV 列:
 | 列 | 内容 |
 | --- | --- |
 | `filename` | ファイル名 |
-| `integrated_lufs` | Integrated ラウドネス（LUFS） |
+| `integrated_lufs` | Integrated ラウドネス（LUFS、小数点以下1桁） |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
 
@@ -66,8 +66,8 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `filename` | ファイル名 |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
-| `integrated_lufs` | 入力の Integrated（LUFS） |
-| `target_lufs` | CSV から採用した目標 Integrated（LUFS） |
+| `integrated_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
+| `target_lufs` | CSV から採用した目標 Integrated（LUFS、小数点以下1桁） |
 | `gain_db` | 適用ゲイン（dB） |
 | `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
 | `true_peak_status` | True Peak が 0 dBTP 超なら `over`、計測不能なら `unknown`（未超過は空） |

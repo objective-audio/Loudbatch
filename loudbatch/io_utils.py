@@ -46,6 +46,10 @@ NORMALIZE_CSV_FIELDNAMES = [
 ]
 
 
+def format_lufs(value: float) -> str:
+    return f"{value:.1f}"
+
+
 def require_ffmpeg() -> str:
     path = shutil.which("ffmpeg")
     if not path:
