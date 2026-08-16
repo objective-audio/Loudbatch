@@ -18,7 +18,7 @@ from loudbatch.io_utils import (
     write_csv,
 )
 from loudbatch.measure import measure_directory
-from loudbatch.normalize import normalize_directory, pcm_codec_from_stream
+from loudbatch.normalize import _peak_status, normalize_directory, pcm_codec_from_stream
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORK_ROOT = REPO_ROOT / "workspace" / "test"
@@ -282,8 +282,8 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
             normalize_csv,
             fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
         )
-        self.assertEqual(norm_by_name["loud.wav"]["sample_peak_over"], "")
-        self.assertEqual(norm_by_name["loud.wav"]["true_peak_over"], "")
+        self.assertEqual(norm_by_name["loud.wav"]["sample_peak_status"], "")
+        self.assertEqual(norm_by_name["loud.wav"]["true_peak_status"], "")
 
         remeasure_csv = self.remeasure_out / "loudbatch.csv"
         rem_rows = measure_directory(self.normalize_out, remeasure_csv)
@@ -573,8 +573,17 @@ class PeakOverCsvTests(unittest.TestCase):
         )
         row = by_name["quiet.wav"]
         self.assertEqual(row["status"], "ok")
-        self.assertEqual(row["sample_peak_over"], "over")
-        self.assertEqual(row["true_peak_over"], "over")
+        self.assertEqual(row["sample_peak_status"], "over")
+        self.assertEqual(row["true_peak_status"], "over")
+
+
+class PeakStatusHelperTests(unittest.TestCase):
+    def test_unmeasured_over_and_clear(self) -> None:
+        self.assertEqual(_peak_status(None), "unknown")
+        self.assertEqual(_peak_status(float("nan")), "unknown")
+        self.assertEqual(_peak_status(0.1), "over")
+        self.assertEqual(_peak_status(0.0), "")
+        self.assertEqual(_peak_status(-1.0), "")
 
 
 if __name__ == "__main__":

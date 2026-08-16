@@ -41,8 +41,8 @@ NORMALIZE_CSV_FIELDNAMES = [
     "integrated_lufs",
     "target_lufs",
     "gain_db",
-    "sample_peak_over",
-    "true_peak_over",
+    "sample_peak_status",
+    "true_peak_status",
 ]
 
 

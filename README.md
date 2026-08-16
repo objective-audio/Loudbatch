@@ -69,8 +69,8 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `integrated_lufs` | 入力の Integrated（LUFS） |
 | `target_lufs` | CSV から採用した目標 Integrated（LUFS） |
 | `gain_db` | 適用ゲイン（dB） |
-| `sample_peak_over` | サンプルピークが 0 dBFS 超なら `over`（未超過は空） |
-| `true_peak_over` | True Peak が 0 dBTP 超なら `over`（未超過は空） |
+| `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
+| `true_peak_status` | True Peak が 0 dBTP 超なら `over`、計測不能なら `unknown`（未超過は空） |
 
 ## 対応拡張子
 
@@ -89,5 +89,5 @@ python -m unittest discover -s tests -v
 ## 補足
 
 - 正規化は ebur128 で Integrated を計測し、CSV の目標との差を `volume` ゲインで適用します（ピーク制限なし。整数 PCM ではクリップし得ます）。
-- ゲイン適用後にサンプルピーク / True Peak が 0 を超える場合は警告のみ（書き出しは継続）。`loudbatch_normalize.csv` の `sample_peak_over` / `true_peak_over` で確認できます。
+- ゲイン適用後にサンプルピーク / True Peak が 0 を超える場合は警告のみ（書き出しは継続）。`loudbatch_normalize.csv` の `sample_peak_status` / `true_peak_status` で確認できます。ピークを測定できなかった場合は `unknown` になります。
 - リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します。

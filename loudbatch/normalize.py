@@ -125,9 +125,9 @@ def measure_sample_peak_db(path: Path) -> Optional[float]:
     return float(matches[-1])
 
 
-def _peak_over_flag(peak_db: Optional[float]) -> str:
+def _peak_status(peak_db: Optional[float]) -> str:
     if peak_db is None or not math.isfinite(peak_db):
-        return ""
+        return "unknown"
     return "over" if peak_db > 0.0 else ""
 
 
@@ -139,8 +139,8 @@ def _empty_normalize_row(src: Path) -> Dict[str, object]:
         "integrated_lufs": "",
         "target_lufs": "",
         "gain_db": "",
-        "sample_peak_over": "",
-        "true_peak_over": "",
+        "sample_peak_status": "",
+        "true_peak_status": "",
     }
 
 
@@ -198,8 +198,8 @@ def normalize_file(
 
     row["_sample_peak_db"] = "" if sample_peak_after is None else sample_peak_after
     row["_true_peak_db"] = "" if true_peak_after is None else true_peak_after
-    row["sample_peak_over"] = _peak_over_flag(sample_peak_after)
-    row["true_peak_over"] = _peak_over_flag(true_peak_after)
+    row["sample_peak_status"] = _peak_status(sample_peak_after)
+    row["true_peak_status"] = _peak_status(true_peak_after)
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
@@ -269,16 +269,20 @@ def normalize_directory(
         if row["status"] == "ok":
             ok += 1
             print("  完了")
-            if row.get("sample_peak_over") == "over":
+            if row.get("sample_peak_status") == "over":
                 print(
                     f"  警告: サンプルピークが 0 dBFS を超えます"
                     f" ({row.get('_sample_peak_db')} dBFS)"
                 )
-            if row.get("true_peak_over") == "over":
+            elif row.get("sample_peak_status") == "unknown":
+                print("  警告: サンプルピークを測定できませんでした")
+            if row.get("true_peak_status") == "over":
                 print(
                     f"  警告: True Peak が 0 dBTP を超えます"
                     f" ({row.get('_true_peak_db')} dBTP)"
                 )
+            elif row.get("true_peak_status") == "unknown":
+                print("  警告: True Peak を測定できませんでした")
         else:
             failed += 1
             print(f"  失敗: {row['error']}")
