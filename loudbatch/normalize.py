@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from .io_utils import (
     NORMALIZE_CSV_FIELDNAMES,
+    format_lufs,
     iter_audio_files,
+    load_targets_csv,
     print_summary,
     probe_audio_stream,
     relative_under,
@@ -124,25 +126,22 @@ def measure_sample_peak_db(path: Path) -> Optional[float]:
     return float(matches[-1])
 
 
-def _peak_over_flag(peak_db: Optional[float]) -> str:
+def _peak_status(peak_db: Optional[float]) -> str:
     if peak_db is None or not math.isfinite(peak_db):
-        return ""
-    return "yes" if peak_db > 0.0 else "no"
+        return "unknown"
+    return "over" if peak_db > 0.0 else ""
 
 
-def _empty_normalize_row(src: Path, dst: Path) -> Dict[str, object]:
+def _empty_normalize_row(src: Path) -> Dict[str, object]:
     return {
         "filename": src.name,
-        "path": str(src),
-        "output": str(dst),
         "status": "error",
         "error": "",
         "integrated_lufs": "",
+        "target_lufs": "",
         "gain_db": "",
-        "sample_peak_db": "",
-        "true_peak_db": "",
-        "sample_peak_over": "",
-        "true_peak_over": "",
+        "sample_peak_status": "",
+        "true_peak_status": "",
     }
 
 
@@ -152,7 +151,8 @@ def normalize_file(
     *,
     target_i: float,
 ) -> Dict[str, object]:
-    row = _empty_normalize_row(src, dst)
+    row = _empty_normalize_row(src)
+    row["target_lufs"] = format_lufs(target_i)
 
     pcm_error = validate_linear_pcm(src)
     if pcm_error:
@@ -180,7 +180,7 @@ def normalize_file(
         return row
 
     gain_db = target_i - integrated
-    row["integrated_lufs"] = integrated
+    row["integrated_lufs"] = format_lufs(integrated)
     row["gain_db"] = gain_db
 
     sample_peak_in = measure_sample_peak_db(src)
@@ -197,10 +197,10 @@ def normalize_file(
     )
     true_peak_after = true_peak_in + gain_db if true_peak_in is not None else None
 
-    row["sample_peak_db"] = "" if sample_peak_after is None else sample_peak_after
-    row["true_peak_db"] = "" if true_peak_after is None else true_peak_after
-    row["sample_peak_over"] = _peak_over_flag(sample_peak_after)
-    row["true_peak_over"] = _peak_over_flag(true_peak_after)
+    row["_sample_peak_db"] = "" if sample_peak_after is None else sample_peak_after
+    row["_true_peak_db"] = "" if true_peak_after is None else true_peak_after
+    row["sample_peak_status"] = _peak_status(sample_peak_after)
+    row["true_peak_status"] = _peak_status(true_peak_after)
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
@@ -232,9 +232,10 @@ def normalize_directory(
     input_dir: Path,
     output_dir: Path,
     *,
-    target_i: float = -23.0,
+    csv_path: Path,
     recursive: bool = False,
 ) -> List[Dict[str, object]]:
+    targets = load_targets_csv(csv_path)
     output_csv = output_dir / "loudbatch_normalize.csv"
     files = iter_audio_files(input_dir, recursive=recursive)
     if not files:
@@ -252,6 +253,14 @@ def normalize_directory(
         rel = relative_under(input_dir, src)
         dst = (output_dir / rel).resolve()
         print(f"正規化中: {src.name} → {dst}")
+        target_i = targets.get(src.name)
+        if target_i is None:
+            row = _empty_normalize_row(src)
+            row["error"] = "CSV に目標値がありません"
+            rows.append(row)
+            failed += 1
+            print(f"  失敗: {row['error']}")
+            continue
         row = normalize_file(
             src,
             dst,
@@ -261,16 +270,20 @@ def normalize_directory(
         if row["status"] == "ok":
             ok += 1
             print("  完了")
-            if row.get("sample_peak_over") == "yes":
+            if row.get("sample_peak_status") == "over":
                 print(
                     f"  警告: サンプルピークが 0 dBFS を超えます"
-                    f" ({row.get('sample_peak_db')} dBFS)"
+                    f" ({row.get('_sample_peak_db')} dBFS)"
                 )
-            if row.get("true_peak_over") == "yes":
+            elif row.get("sample_peak_status") == "unknown":
+                print("  警告: サンプルピークを測定できませんでした")
+            if row.get("true_peak_status") == "over":
                 print(
                     f"  警告: True Peak が 0 dBTP を超えます"
-                    f" ({row.get('true_peak_db')} dBTP)"
+                    f" ({row.get('_true_peak_db')} dBTP)"
                 )
+            elif row.get("true_peak_status") == "unknown":
+                print("  警告: True Peak を測定できませんでした")
         else:
             failed += 1
             print(f"  失敗: {row['error']}")

@@ -1,6 +1,6 @@
 # Loudbatch
 
-フォルダ内の音声ファイルについて、ITU-R BS.1770 の **Integrated ラウドネス（LUFS）** を計測して CSV に書き出す CLI と、目標 LUFS へ正規化して別フォルダへ書き出す CLI です。計測は [ffmpeg](https://ffmpeg.org/) の `ebur128`、正規化は計測結果に基づく `volume` ゲインを使います。
+フォルダ内の音声ファイルについて、ITU-R BS.1770 の **Integrated ラウドネス（LUFS）** を計測して CSV に書き出す CLI と、CSV で指定した目標 LUFS へ正規化して別フォルダへ書き出す CLI です。計測は [ffmpeg](https://ffmpeg.org/) の `ebur128`、正規化は計測結果に基づく `volume` ゲインを使います。
 
 ## 前提
 
@@ -39,42 +39,38 @@ CSV 列:
 | 列 | 内容 |
 | --- | --- |
 | `filename` | ファイル名 |
-| `path` | 絶対パス |
-| `integrated_lufs` | Integrated ラウドネス（LUFS） |
-| `lra` | Loudness Range（LU） |
-| `true_peak_db` | True Peak（dB） |
+| `integrated_lufs` | Integrated ラウドネス（LUFS、小数点以下1桁） |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
 
 ### 正規化（別フォルダへ書き出し）
 
+`measure` で得た CSV を `--csv` に渡し、同じファイル名の音声をその `integrated_lufs` に揃えます。CSV の値を編集して別の目標を指定することもできます。
+
 ```bash
-python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir
-python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir -t -23
+python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path/to/loudbatch.csv
+python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path/to/loudbatch.csv -r
 ```
 
 | 引数 | デフォルト | 意味 |
 | --- | --- | --- |
-| `-t` / `--target` | `-23` | 目標 Integrated（LUFS） |
+| `--csv` | （必須） | ファイルごとの目標 Integrated（LUFS）。`filename` と `integrated_lufs` 列が必要 |
 | `-r` / `--recursive` | off | サブフォルダも対象 |
 
-元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
+照合はファイル名です。CSV に目標が無いファイルは書き出さず `status=error` になります。元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
 
 正規化結果は出力フォルダの `loudbatch_normalize.csv` に記録します。ゲイン適用後の予測ピークが 0 を超える場合もファイルは書き出し、コンソールに警告を出し CSV のフラグで判別できます。
 
 | 列 | 内容 |
 | --- | --- |
 | `filename` | ファイル名 |
-| `path` | 入力の絶対パス |
-| `output` | 出力ファイルの絶対パス |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
-| `integrated_lufs` | 入力の Integrated（LUFS） |
+| `integrated_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
+| `target_lufs` | CSV から採用した目標 Integrated（LUFS、小数点以下1桁） |
 | `gain_db` | 適用ゲイン（dB） |
-| `sample_peak_db` | ゲイン適用後の予測サンプルピーク（dBFS） |
-| `true_peak_db` | ゲイン適用後の予測 True Peak（dBTP） |
-| `sample_peak_over` | サンプルピークが 0 dBFS 超なら `yes` |
-| `true_peak_over` | True Peak が 0 dBTP 超なら `yes` |
+| `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
+| `true_peak_status` | True Peak が 0 dBTP 超なら `over`、計測不能なら `unknown`（未超過は空） |
 
 ## 対応拡張子
 
@@ -92,6 +88,6 @@ python -m unittest discover -s tests -v
 
 ## 補足
 
-- 正規化は ebur128 で Integrated を計測し、目標との差を `volume` ゲインで適用します（ピーク制限なし。整数 PCM ではクリップし得ます）。
-- ゲイン適用後にサンプルピーク / True Peak が 0 を超える場合は警告のみ（書き出しは継続）。`loudbatch_normalize.csv` の `sample_peak_over` / `true_peak_over` で確認できます。
+- 正規化は ebur128 で Integrated を計測し、CSV の目標との差を `volume` ゲインで適用します（ピーク制限なし。整数 PCM ではクリップし得ます）。
+- ゲイン適用後にサンプルピーク / True Peak が 0 を超える場合は警告のみ（書き出しは継続）。`loudbatch_normalize.csv` の `sample_peak_status` / `true_peak_status` で確認できます。ピークを測定できなかった場合は `unknown` になります。
 - リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します。

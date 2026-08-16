@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,27 +29,25 @@ AUDIO_EXTENSIONS = PCM_EXTENSIONS | REJECTED_AUDIO_EXTENSIONS
 
 CSV_FIELDNAMES = [
     "filename",
-    "path",
     "integrated_lufs",
-    "lra",
-    "true_peak_db",
     "status",
     "error",
 ]
 
 NORMALIZE_CSV_FIELDNAMES = [
     "filename",
-    "path",
-    "output",
     "status",
     "error",
     "integrated_lufs",
+    "target_lufs",
     "gain_db",
-    "sample_peak_db",
-    "true_peak_db",
-    "sample_peak_over",
-    "true_peak_over",
+    "sample_peak_status",
+    "true_peak_status",
 ]
+
+
+def format_lufs(value: float) -> str:
+    return f"{value:.1f}"
 
 
 def require_ffmpeg() -> str:
@@ -140,6 +139,42 @@ def relative_under(root: Path, path: Path) -> Path:
         return path.resolve().relative_to(root.resolve())
     except ValueError:
         return Path(path.name)
+
+
+def load_targets_csv(path: Path) -> Dict[str, float]:
+    """Load per-file target Integrated LUFS from a measure CSV."""
+    if not path.is_file():
+        raise SystemExit(f"目標 CSV が見つかりません: {path}")
+
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = reader.fieldnames or []
+        if "filename" not in fieldnames or "integrated_lufs" not in fieldnames:
+            raise SystemExit("目標 CSV に filename と integrated_lufs 列が必要です")
+
+        seen: set[str] = set()
+        targets: Dict[str, float] = {}
+        for row in reader:
+            name = (row.get("filename") or "").strip()
+            if not name:
+                continue
+            if name in seen:
+                raise SystemExit(f"目標 CSV に同じファイル名が複数あります: {name}")
+            seen.add(name)
+
+            if (row.get("status") or "").strip() != "ok":
+                continue
+            raw = (row.get("integrated_lufs") or "").strip()
+            try:
+                value = float(raw)
+            except ValueError:
+                raise SystemExit(
+                    f"目標 CSV の integrated_lufs が数値ではありません: {name}"
+                )
+            if not math.isfinite(value):
+                raise SystemExit(f"目標 CSV の integrated_lufs が無効です: {name}")
+            targets[name] = value
+    return targets
 
 
 def write_csv(

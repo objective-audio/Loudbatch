@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="サブフォルダも再帰的に走査する",
     )
 
-    normalize_p = sub.add_parser("normalize", help="目標 LUFS に正規化して別フォルダへ書き出す")
+    normalize_p = sub.add_parser("normalize", help="CSV の目標 LUFS に正規化して別フォルダへ書き出す")
     normalize_p.add_argument("input_dir", type=Path, help="音声ファイルが入ったフォルダ")
     normalize_p.add_argument(
         "-o",
@@ -45,11 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="正規化後ファイルの出力フォルダ",
     )
     normalize_p.add_argument(
-        "-t",
-        "--target",
-        type=float,
-        default=-23.0,
-        help="目標 Integrated ラウドネス（LUFS、デフォルト: -23）",
+        "--csv",
+        type=Path,
+        required=True,
+        help="ファイルごとの目標 LUFS が入った CSV（measure の出力）",
     )
     normalize_p.add_argument(
         "-r",
@@ -80,10 +79,11 @@ def main(argv: list[str] | None = None) -> int:
         output_dir = args.output.expanduser().resolve()
         if output_dir == input_dir:
             parser.error("出力フォルダは入力フォルダと別にしてください（元ファイルを保持します）")
+        csv_path = args.csv.expanduser().resolve()
         normalize_directory(
             input_dir,
             output_dir,
-            target_i=args.target,
+            csv_path=csv_path,
             recursive=args.recursive,
         )
         return 0
