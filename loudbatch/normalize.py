@@ -137,7 +137,7 @@ def _empty_normalize_row(src: Path) -> Dict[str, object]:
         "filename": src.name,
         "status": "error",
         "error": "",
-        "integrated_lufs": "",
+        "input_lufs": "",
         "target_lufs": "",
         "gain_db": "",
         "sample_peak_status": "",
@@ -180,7 +180,7 @@ def normalize_file(
         return row
 
     gain_db = target_i - integrated
-    row["integrated_lufs"] = format_lufs(integrated)
+    row["input_lufs"] = format_lufs(integrated)
     row["gain_db"] = gain_db
 
     sample_peak_in = measure_sample_peak_db(src)
@@ -234,13 +234,19 @@ def normalize_directory(
     *,
     csv_path: Path,
     recursive: bool = False,
+    column_map: Optional[Mapping[str, str]] = None,
 ) -> List[Dict[str, object]]:
-    targets = load_targets_csv(csv_path)
+    targets = load_targets_csv(csv_path, column_map=column_map)
     output_csv = output_dir / "loudbatch_normalize.csv"
     files = iter_audio_files(input_dir, recursive=recursive)
     if not files:
         print(f"音声ファイルが見つかりません: {input_dir}")
-        write_csv(output_csv, [], fieldnames=NORMALIZE_CSV_FIELDNAMES)
+        write_csv(
+            output_csv,
+            [],
+            fieldnames=NORMALIZE_CSV_FIELDNAMES,
+            column_map=column_map,
+        )
         print_summary("normalize", 0, 0)
         return []
 
@@ -288,7 +294,12 @@ def normalize_directory(
             failed += 1
             print(f"  失敗: {row['error']}")
 
-    write_csv(output_csv, rows, fieldnames=NORMALIZE_CSV_FIELDNAMES)
+    write_csv(
+        output_csv,
+        rows,
+        fieldnames=NORMALIZE_CSV_FIELDNAMES,
+        column_map=column_map,
+    )
     print(f"CSV 書き出し: {output_csv}")
     print_summary("normalize", ok, failed)
     return rows

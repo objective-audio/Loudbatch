@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional
 
 from .io_utils import (
     format_lufs,
@@ -95,11 +95,12 @@ def measure_directory(
     output_csv: Path,
     *,
     recursive: bool = False,
+    column_map: Optional[Mapping[str, str]] = None,
 ) -> List[Dict[str, object]]:
     files = iter_audio_files(input_dir, recursive=recursive)
     if not files:
         print(f"音声ファイルが見つかりません: {input_dir}")
-        write_csv(output_csv, [])
+        write_csv(output_csv, [], column_map=column_map)
         print_summary("measure", 0, 0)
         return []
 
@@ -117,7 +118,7 @@ def measure_directory(
             failed += 1
             print(f"  失敗: {row['error']}")
 
-    write_csv(output_csv, rows)
+    write_csv(output_csv, rows, column_map=column_map)
     print(f"CSV 書き出し: {output_csv}")
     print_summary("measure", ok, failed)
     return rows
