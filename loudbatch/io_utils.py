@@ -38,12 +38,17 @@ NORMALIZE_CSV_FIELDNAMES = [
     "filename",
     "status",
     "error",
-    "integrated_lufs",
+    "input_lufs",
     "target_lufs",
     "gain_db",
     "sample_peak_status",
     "true_peak_status",
 ]
+
+# --column で使える内部名（入力 CSV の目標列 + 出力 CSV 列）
+NORMALIZE_COLUMN_KEYS = list(
+    dict.fromkeys(["integrated_lufs", *NORMALIZE_CSV_FIELDNAMES])
+)
 
 
 def format_lufs(value: float) -> str:

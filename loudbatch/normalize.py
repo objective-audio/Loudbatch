@@ -137,7 +137,7 @@ def _empty_normalize_row(src: Path) -> Dict[str, object]:
         "filename": src.name,
         "status": "error",
         "error": "",
-        "integrated_lufs": "",
+        "input_lufs": "",
         "target_lufs": "",
         "gain_db": "",
         "sample_peak_status": "",
@@ -180,7 +180,7 @@ def normalize_file(
         return row
 
     gain_db = target_i - integrated
-    row["integrated_lufs"] = format_lufs(integrated)
+    row["input_lufs"] = format_lufs(integrated)
     row["gain_db"] = gain_db
 
     sample_peak_in = measure_sample_peak_db(src)

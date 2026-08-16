@@ -10,6 +10,7 @@ from pathlib import Path
 
 from loudbatch.io_utils import (
     CSV_FIELDNAMES,
+    NORMALIZE_COLUMN_KEYS,
     NORMALIZE_CSV_FIELDNAMES,
     load_targets_csv,
     mapped_fieldnames,
@@ -329,6 +330,16 @@ class ParseColumnMapTests(unittest.TestCase):
             parse_column_map(["filename=status"], CSV_FIELDNAMES)
         self.assertIn("同じ CSV 列名", str(ctx.exception))
 
+    def test_normalize_keys_accept_input_and_target_columns(self) -> None:
+        mapping = parse_column_map(
+            ["integrated_lufs=目標LUFS", "input_lufs=入力LUFS"],
+            NORMALIZE_COLUMN_KEYS,
+        )
+        self.assertEqual(
+            mapping,
+            {"integrated_lufs": "目標LUFS", "input_lufs": "入力LUFS"},
+        )
+
 
 class WriteCsvColumnMapTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -421,6 +432,9 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(norm_by_name["loud.wav"]["sample_peak_status"], "")
         self.assertEqual(norm_by_name["loud.wav"]["true_peak_status"], "")
+        self.assertRegex(norm_by_name["loud.wav"]["input_lufs"], r"^-?\d+\.\d$")
+        self.assertNotEqual(float(norm_by_name["loud.wav"]["input_lufs"]), TARGET_I)
+        self.assertEqual(float(norm_by_name["loud.wav"]["target_lufs"]), TARGET_I)
 
         remeasure_csv = self.remeasure_out / "loudbatch.csv"
         rem_rows = measure_directory(self.normalize_out, remeasure_csv)
@@ -471,6 +485,7 @@ class ColumnMapDirectoryTests(unittest.TestCase):
         normalize_map = {
             "filename": "ファイル名",
             "integrated_lufs": "LUFS",
+            "input_lufs": "入力LUFS",
             "target_lufs": "目標LUFS",
         }
         targets_csv = WORK_ROOT / "targets.csv"
@@ -502,7 +517,8 @@ class ColumnMapDirectoryTests(unittest.TestCase):
         row = norm_by_name["tone.wav"]
         self.assertEqual(row["status"], "ok")
         self.assertEqual(float(row["目標LUFS"]), TARGET_I)
-        self.assertRegex(row["LUFS"], r"^-?\d+\.\d$")
+        self.assertRegex(row["入力LUFS"], r"^-?\d+\.\d$")
+        self.assertNotIn("LUFS", row)
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")

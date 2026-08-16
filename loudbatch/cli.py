@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from . import __version__
-from .io_utils import CSV_FIELDNAMES, NORMALIZE_CSV_FIELDNAMES, parse_column_map, require_ffmpeg
+from .io_utils import CSV_FIELDNAMES, NORMALIZE_COLUMN_KEYS, parse_column_map, require_ffmpeg
 from .measure import measure_directory
 from .normalize import normalize_directory
 
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         if output_dir == input_dir:
             parser.error("出力フォルダは入力フォルダと別にしてください（元ファイルを保持します）")
         csv_path = args.csv.expanduser().resolve()
-        column_map = parse_column_map(args.columns, NORMALIZE_CSV_FIELDNAMES)
+        column_map = parse_column_map(args.columns, NORMALIZE_COLUMN_KEYS)
         normalize_directory(
             input_dir,
             output_dir,

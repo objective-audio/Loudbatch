@@ -62,7 +62,7 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | --- | --- | --- |
 | `--csv` | （必須） | ファイルごとの目標 Integrated（LUFS）。`filename` と `integrated_lufs` 列が必要（`--column` で別名可） |
 | `-r` / `--recursive` | off | サブフォルダも対象 |
-| `--column` | なし | CSV 列名の置き換え（繰り返し可）。入力 CSV の読み取りと結果 CSV の書き出しの両方に使う |
+| `--column` | なし | CSV 列名の置き換え（繰り返し可）。入力 CSV の目標列は `integrated_lufs`、結果 CSV の実測列は `input_lufs`（別名はそれぞれ別指定） |
 
 照合はファイル名です。CSV に目標が無いファイルは書き出さず `status=error` になります。元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
 
@@ -73,7 +73,7 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `filename` | ファイル名 |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
-| `integrated_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
+| `input_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
 | `target_lufs` | CSV から採用した目標 Integrated（LUFS、小数点以下1桁） |
 | `gain_db` | 適用ゲイン（dB） |
 | `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
