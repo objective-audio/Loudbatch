@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from .io_utils import (
     NORMALIZE_CSV_FIELDNAMES,
+    csv_filename,
     format_lufs,
     iter_audio_files,
     load_targets_csv,
@@ -134,7 +135,7 @@ def _peak_status(peak_db: Optional[float]) -> str:
 
 def _empty_normalize_row(src: Path) -> Dict[str, object]:
     return {
-        "filename": src.name,
+        "filename": csv_filename(src),
         "status": "error",
         "error": "",
         "input_lufs": "",
@@ -259,7 +260,7 @@ def normalize_directory(
         rel = relative_under(input_dir, src)
         dst = (output_dir / rel).resolve()
         print(f"正規化中: {src.name} → {dst}")
-        target_i = targets.get(src.name)
+        target_i = targets.get(csv_filename(src))
         if target_i is None:
             row = _empty_normalize_row(src)
             row["error"] = "CSV に目標値がありません"
