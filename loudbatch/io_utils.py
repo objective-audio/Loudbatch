@@ -246,7 +246,7 @@ def load_targets_csv(
     lufs_col = mapping.get("integrated_lufs", "integrated_lufs")
     status_col = mapping.get("status", "status")
 
-    with path.open(newline="", encoding="utf-8") as fh:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         fieldnames = reader.fieldnames or []
         if filename_col not in fieldnames or lufs_col not in fieldnames:
