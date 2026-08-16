@@ -12,6 +12,8 @@ from loudbatch.io_utils import (
     CSV_FIELDNAMES,
     NORMALIZE_COLUMN_KEYS,
     NORMALIZE_CSV_FIELDNAMES,
+    csv_filename,
+    csv_filename_key,
     load_targets_csv,
     mapped_fieldnames,
     parse_column_map,
@@ -178,6 +180,19 @@ def _rows_by_filename(
         return {row[filename_key]: row for row in reader}
 
 
+class CsvFilenameHelperTests(unittest.TestCase):
+    def test_csv_filename_uses_stem(self) -> None:
+        self.assertEqual(csv_filename(Path("loud.wav")), "loud")
+        self.assertEqual(csv_filename(Path("tone.mp3")), "tone")
+        self.assertEqual(csv_filename(Path("foo.bar.aiff")), "foo.bar")
+
+    def test_csv_filename_key_strips_known_audio_extensions(self) -> None:
+        self.assertEqual(csv_filename_key("loud.wav"), "loud")
+        self.assertEqual(csv_filename_key("loud"), "loud")
+        self.assertEqual(csv_filename_key("tone.mp3"), "tone")
+        self.assertEqual(csv_filename_key("notes.txt"), "notes.txt")
+
+
 class LoadTargetsCsvTests(unittest.TestCase):
     def setUp(self) -> None:
         _clean_work_root()
@@ -205,7 +220,7 @@ class LoadTargetsCsvTests(unittest.TestCase):
             ],
         )
         targets = load_targets_csv(self.csv_path)
-        self.assertEqual(targets, {"keep.wav": -18.5})
+        self.assertEqual(targets, {"keep": -18.5})
 
     def test_rejects_duplicate_filenames(self) -> None:
         write_csv(
@@ -219,6 +234,43 @@ class LoadTargetsCsvTests(unittest.TestCase):
                 },
                 {
                     "filename": "dup.wav",
+                    "integrated_lufs": -18.0,
+                    "status": "ok",
+                    "error": "",
+                },
+            ],
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            load_targets_csv(self.csv_path)
+        self.assertIn("同じファイル名", str(ctx.exception))
+
+    def test_loads_stem_without_extension(self) -> None:
+        write_csv(
+            self.csv_path,
+            [
+                {
+                    "filename": "keep",
+                    "integrated_lufs": -18.5,
+                    "status": "ok",
+                    "error": "",
+                }
+            ],
+        )
+        targets = load_targets_csv(self.csv_path)
+        self.assertEqual(targets, {"keep": -18.5})
+
+    def test_rejects_duplicate_stems_with_different_extensions(self) -> None:
+        write_csv(
+            self.csv_path,
+            [
+                {
+                    "filename": "dup.wav",
+                    "integrated_lufs": -23.0,
+                    "status": "ok",
+                    "error": "",
+                },
+                {
+                    "filename": "dup.aiff",
                     "integrated_lufs": -18.0,
                     "status": "ok",
                     "error": "",
@@ -251,7 +303,7 @@ class LoadTargetsCsvTests(unittest.TestCase):
             self.csv_path,
             column_map={"filename": "ファイル名", "integrated_lufs": "目標LUFS"},
         )
-        self.assertEqual(targets, {"keep.wav": -18.5})
+        self.assertEqual(targets, {"keep": -18.5})
 
     def test_accepts_rows_when_status_column_is_absent(self) -> None:
         self.csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -260,7 +312,7 @@ class LoadTargetsCsvTests(unittest.TestCase):
             writer.writeheader()
             writer.writerow({"filename": "keep.wav", "integrated_lufs": "-23.0"})
         targets = load_targets_csv(self.csv_path)
-        self.assertEqual(targets, {"keep.wav": -23.0})
+        self.assertEqual(targets, {"keep": -23.0})
 
     def test_skips_non_ok_when_status_column_is_remapped(self) -> None:
         write_csv(
@@ -282,7 +334,7 @@ class LoadTargetsCsvTests(unittest.TestCase):
             column_map={"status": "状態"},
         )
         targets = load_targets_csv(self.csv_path, column_map={"status": "状態"})
-        self.assertEqual(targets, {"keep.wav": -18.5})
+        self.assertEqual(targets, {"keep": -18.5})
 
 
 class ParseColumnMapTests(unittest.TestCase):
@@ -355,7 +407,7 @@ class WriteCsvColumnMapTests(unittest.TestCase):
             self.csv_path,
             [
                 {
-                    "filename": "a.wav",
+                    "filename": "a",
                     "integrated_lufs": -23.0,
                     "status": "ok",
                     "error": "",
@@ -369,7 +421,7 @@ class WriteCsvColumnMapTests(unittest.TestCase):
             self.assertEqual(reader.fieldnames, expected)
             rows = list(reader)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["ファイル名"], "a.wav")
+        self.assertEqual(rows[0]["ファイル名"], "a")
         self.assertEqual(rows[0]["LUFS"], "-23.0")
         self.assertEqual(rows[0]["status"], "ok")
         self.assertNotIn("filename", rows[0])
@@ -400,10 +452,10 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
 
         by_name = _rows_by_filename(measure_csv)
-        self.assertEqual(set(by_name), {"loud.wav", "quiet.wav"})
+        self.assertEqual(set(by_name), {"loud", "quiet"})
 
-        loud = by_name["loud.wav"]
-        quiet = by_name["quiet.wav"]
+        loud = by_name["loud"]
+        quiet = by_name["quiet"]
         self.assertEqual(loud["status"], "ok")
         self.assertEqual(quiet["status"], "ok")
 
@@ -419,7 +471,7 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
             self.normalize_out,
             csv_path=_write_targets_csv(
                 WORK_ROOT / "targets.csv",
-                {"loud.wav": TARGET_I, "quiet.wav": TARGET_I},
+                {"loud": TARGET_I, "quiet": TARGET_I},
             ),
         )
         self.assertTrue((self.normalize_out / "loud.wav").is_file())
@@ -430,18 +482,18 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
             normalize_csv,
             fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
         )
-        self.assertEqual(norm_by_name["loud.wav"]["sample_peak_status"], "")
-        self.assertEqual(norm_by_name["loud.wav"]["true_peak_status"], "")
-        self.assertRegex(norm_by_name["loud.wav"]["input_lufs"], r"^-?\d+\.\d$")
-        self.assertNotEqual(float(norm_by_name["loud.wav"]["input_lufs"]), TARGET_I)
-        self.assertEqual(float(norm_by_name["loud.wav"]["target_lufs"]), TARGET_I)
+        self.assertEqual(norm_by_name["loud"]["sample_peak_status"], "")
+        self.assertEqual(norm_by_name["loud"]["true_peak_status"], "")
+        self.assertRegex(norm_by_name["loud"]["input_lufs"], r"^-?\d+\.\d$")
+        self.assertNotEqual(float(norm_by_name["loud"]["input_lufs"]), TARGET_I)
+        self.assertEqual(float(norm_by_name["loud"]["target_lufs"]), TARGET_I)
 
         remeasure_csv = self.remeasure_out / "loudbatch.csv"
         rem_rows = measure_directory(self.normalize_out, remeasure_csv)
         self.assertEqual(len(rem_rows), 2)
         rem_by_name = _rows_by_filename(remeasure_csv)
 
-        for name in ("loud.wav", "quiet.wav"):
+        for name in ("loud", "quiet"):
             row = rem_by_name[name]
             self.assertEqual(row["status"], "ok", msg=row.get("error", ""))
             integrated = float(row["integrated_lufs"])
@@ -478,9 +530,9 @@ class ColumnMapDirectoryTests(unittest.TestCase):
             fieldnames=measure_headers,
             filename_key="ファイル名",
         )
-        self.assertIn("tone.wav", by_name)
-        self.assertEqual(by_name["tone.wav"]["status"], "ok")
-        self.assertRegex(by_name["tone.wav"]["LUFS"], r"^-?\d+\.\d$")
+        self.assertIn("tone", by_name)
+        self.assertEqual(by_name["tone"]["status"], "ok")
+        self.assertRegex(by_name["tone"]["LUFS"], r"^-?\d+\.\d$")
 
         normalize_map = {
             "filename": "ファイル名",
@@ -493,7 +545,7 @@ class ColumnMapDirectoryTests(unittest.TestCase):
             targets_csv,
             [
                 {
-                    "filename": "tone.wav",
+                    "filename": "tone",
                     "integrated_lufs": TARGET_I,
                     "status": "ok",
                     "error": "",
@@ -514,7 +566,7 @@ class ColumnMapDirectoryTests(unittest.TestCase):
             fieldnames=mapped_fieldnames(NORMALIZE_CSV_FIELDNAMES, normalize_map),
             filename_key="ファイル名",
         )
-        row = norm_by_name["tone.wav"]
+        row = norm_by_name["tone"]
         self.assertEqual(row["status"], "ok")
         self.assertEqual(float(row["目標LUFS"]), TARGET_I)
         self.assertRegex(row["入力LUFS"], r"^-?\d+\.\d$")
@@ -557,18 +609,18 @@ class NormalizeToMeasureCsvTests(unittest.TestCase):
             fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
         )
         self.assertEqual(
-            float(norm_by_name["loud.wav"]["target_lufs"]),
-            float(ref_by_name["loud.wav"]["integrated_lufs"]),
+            float(norm_by_name["loud"]["target_lufs"]),
+            float(ref_by_name["loud"]["integrated_lufs"]),
         )
         self.assertEqual(
-            float(norm_by_name["quiet.wav"]["target_lufs"]),
-            float(ref_by_name["quiet.wav"]["integrated_lufs"]),
+            float(norm_by_name["quiet"]["target_lufs"]),
+            float(ref_by_name["quiet"]["integrated_lufs"]),
         )
 
         rem_csv = self.remeasure_out / "loudbatch.csv"
         measure_directory(self.normalize_out, rem_csv)
         rem_by_name = _rows_by_filename(rem_csv)
-        for name in ("loud.wav", "quiet.wav"):
+        for name in ("loud", "quiet"):
             target = float(ref_by_name[name]["integrated_lufs"])
             integrated = float(rem_by_name[name]["integrated_lufs"])
             self.assertLessEqual(
@@ -592,7 +644,7 @@ class MissingCsvTargetTests(unittest.TestCase):
     def test_normalize_errors_when_filename_missing_from_csv(self) -> None:
         csv_path = _write_targets_csv(
             WORK_ROOT / "other.csv",
-            {"other.wav": TARGET_I},
+            {"other": TARGET_I},
         )
         rows = normalize_directory(
             self.input_dir,
@@ -600,7 +652,7 @@ class MissingCsvTargetTests(unittest.TestCase):
             csv_path=csv_path,
         )
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["filename"], "tone.wav")
+        self.assertEqual(rows[0]["filename"], "tone")
         self.assertEqual(rows[0]["status"], "error")
         self.assertIn("目標値", str(rows[0]["error"]))
         self.assertFalse((self.normalize_out / "tone.wav").exists())
@@ -630,7 +682,7 @@ class PreservePcmFormatTests(unittest.TestCase):
             self.normalize_out,
             csv_path=_write_targets_csv(
                 WORK_ROOT / "pcm_targets.csv",
-                {name: TARGET_I for name in cases},
+                {csv_filename(Path(name)): TARGET_I for name in cases},
             ),
         )
 
@@ -665,7 +717,7 @@ class CompressedFormatRejectionTests(unittest.TestCase):
         rows = measure_directory(self.input_dir, measure_csv)
         self.assertEqual(len(rows), 1)
         by_name = _rows_by_filename(measure_csv)
-        row = by_name["tone.mp3"]
+        row = by_name["tone"]
         self.assertEqual(row["status"], "error")
         self.assertIn(".mp3", row["error"])
         self.assertEqual(row["integrated_lufs"], "")
@@ -675,12 +727,12 @@ class CompressedFormatRejectionTests(unittest.TestCase):
             self.normalize_out,
             csv_path=_write_targets_csv(
                 WORK_ROOT / "mp3_targets.csv",
-                {"tone.mp3": TARGET_I},
+                {"tone": TARGET_I},
             ),
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
-        self.assertEqual(norm["filename"], "tone.mp3")
+        self.assertEqual(norm["filename"], "tone")
         self.assertEqual(norm["status"], "error")
         self.assertIn(".mp3", str(norm["error"]))
         self.assertFalse((self.normalize_out / "tone.mp3").exists())
@@ -708,7 +760,7 @@ class MeasureNormalizeFailureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
 
         by_name = _rows_by_filename(measure_csv)
-        bad = by_name["bad.wav"]
+        bad = by_name["bad"]
         self.assertEqual(bad["status"], "error")
         self.assertTrue(bad["error"])
         self.assertEqual(bad["integrated_lufs"], "")
@@ -718,12 +770,12 @@ class MeasureNormalizeFailureTests(unittest.TestCase):
             self.normalize_out,
             csv_path=_write_targets_csv(
                 WORK_ROOT / "bad_targets.csv",
-                {"bad.wav": TARGET_I},
+                {"bad": TARGET_I},
             ),
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
-        self.assertEqual(norm["filename"], "bad.wav")
+        self.assertEqual(norm["filename"], "bad")
         self.assertEqual(norm["status"], "error")
         self.assertTrue(norm["error"])
         self.assertFalse((self.normalize_out / "bad.wav").exists())
@@ -747,12 +799,12 @@ class SilenceNormalizeFailureTests(unittest.TestCase):
             self.normalize_out,
             csv_path=_write_targets_csv(
                 WORK_ROOT / "silence_targets.csv",
-                {"silence.wav": TARGET_I},
+                {"silence": TARGET_I},
             ),
         )
         self.assertEqual(len(norm_rows), 1)
         norm = norm_rows[0]
-        self.assertEqual(norm["filename"], "silence.wav")
+        self.assertEqual(norm["filename"], "silence")
         self.assertEqual(norm["status"], "error")
         self.assertTrue(norm["error"])
         self.assertFalse((self.normalize_out / "silence.wav").exists())
@@ -778,7 +830,7 @@ class PeakOverCsvTests(unittest.TestCase):
             self.normalize_out,
             csv_path=_write_targets_csv(
                 WORK_ROOT / "peak_targets.csv",
-                {"quiet.wav": boost_target},
+                {"quiet": boost_target},
             ),
         )
         self.assertEqual(len(rows), 1)
@@ -791,7 +843,7 @@ class PeakOverCsvTests(unittest.TestCase):
             normalize_csv,
             fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
         )
-        row = by_name["quiet.wav"]
+        row = by_name["quiet"]
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["sample_peak_status"], "over")
         self.assertEqual(row["true_peak_status"], "over")

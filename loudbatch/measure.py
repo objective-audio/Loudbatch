@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional
 
 from .io_utils import (
+    csv_filename,
     format_lufs,
     iter_audio_files,
     print_summary,
@@ -47,7 +48,7 @@ def parse_ebur128(stderr: str) -> Dict[str, Optional[float]]:
 
 def measure_file(path: Path) -> Dict[str, object]:
     row: Dict[str, object] = {
-        "filename": path.name,
+        "filename": csv_filename(path),
         "integrated_lufs": "",
         "true_peak_db": "",
         "status": "error",

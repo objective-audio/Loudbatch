@@ -146,6 +146,19 @@ def relative_under(root: Path, path: Path) -> Path:
         return Path(path.name)
 
 
+def csv_filename(path: Path) -> str:
+    """CSV に書くファイル名（拡張子なし）。"""
+    return path.stem
+
+
+def csv_filename_key(name: str) -> str:
+    """CSV の filename を照合キーにする。既知の音声拡張子は落とす。"""
+    suffix = Path(name).suffix.lower()
+    if suffix in AUDIO_EXTENSIONS:
+        return Path(name).stem
+    return name
+
+
 def mapped_fieldnames(
     fieldnames: Sequence[str],
     column_map: Optional[Mapping[str, str]] = None,
@@ -218,9 +231,10 @@ def load_targets_csv(
             name = (row.get(filename_col) or "").strip()
             if not name:
                 continue
-            if name in seen:
+            key = csv_filename_key(name)
+            if key in seen:
                 raise SystemExit(f"目標 CSV に同じファイル名が複数あります: {name}")
-            seen.add(name)
+            seen.add(key)
 
             if has_status and (row.get(status_col) or "").strip() != "ok":
                 continue
@@ -233,7 +247,7 @@ def load_targets_csv(
                 )
             if not math.isfinite(value):
                 raise SystemExit(f"目標 CSV の {lufs_col} が無効です: {name}")
-            targets[name] = value
+            targets[key] = value
     return targets
 
 

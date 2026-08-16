@@ -42,14 +42,14 @@ CSV 列:
 
 | 列 | 内容 |
 | --- | --- |
-| `filename` | ファイル名 |
+| `filename` | 拡張子なしのファイル名 |
 | `integrated_lufs` | Integrated ラウドネス（LUFS、小数点以下1桁） |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
 
 ### 正規化（別フォルダへ書き出し）
 
-`measure` で得た CSV を `--csv` に渡し、同じファイル名の音声をその `integrated_lufs` に揃えます。CSV の値を編集して別の目標を指定することもできます。
+`measure` で得た CSV を `--csv` に渡し、同じ（拡張子なしの）ファイル名の音声をその `integrated_lufs` に揃えます。CSV の値を編集して別の目標を指定することもできます。
 
 ```bash
 python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path/to/loudbatch.csv
@@ -64,13 +64,13 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `-r` / `--recursive` | off | サブフォルダも対象 |
 | `--column` | なし | CSV 列名の置き換え（繰り返し可）。入力 CSV の目標列は `integrated_lufs`、結果 CSV の実測列は `input_lufs`（別名はそれぞれ別指定） |
 
-照合はファイル名です。CSV に目標が無いファイルは書き出さず `status=error` になります。元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
+照合は拡張子なしのファイル名です（既存 CSV に `.wav` などが付いていても読み込めます）。CSV に目標が無いファイルは書き出さず `status=error` になります。元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
 
 正規化結果は出力フォルダの `loudbatch_normalize.csv` に記録します。ゲイン適用後の予測ピークが 0 を超える場合もファイルは書き出し、コンソールに警告を出し CSV のフラグで判別できます。
 
 | 列 | 内容 |
 | --- | --- |
-| `filename` | ファイル名 |
+| `filename` | 拡張子なしのファイル名 |
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
 | `input_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
