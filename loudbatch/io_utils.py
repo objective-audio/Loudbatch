@@ -7,6 +7,7 @@ import json
 import math
 import shutil
 import subprocess
+from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -53,6 +54,11 @@ NORMALIZE_COLUMN_KEYS = list(
 
 def format_lufs(value: float) -> str:
     return f"{value:.1f}"
+
+
+def format_gain_db(value: float) -> str:
+    quantized = Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_DOWN)
+    return format(quantized, "f")
 
 
 def require_ffmpeg() -> str:

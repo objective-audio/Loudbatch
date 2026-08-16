@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional
 from .io_utils import (
     NORMALIZE_CSV_FIELDNAMES,
     csv_filename,
+    format_gain_db,
     format_lufs,
     iter_audio_files,
     load_targets_csv,
@@ -182,7 +183,7 @@ def normalize_file(
 
     gain_db = target_i - integrated
     row["input_lufs"] = format_lufs(integrated)
-    row["gain_db"] = gain_db
+    row["gain_db"] = format_gain_db(gain_db)
 
     sample_peak_in = measure_sample_peak_db(src)
     true_peak_in: Optional[float] = None

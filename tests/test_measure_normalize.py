@@ -16,6 +16,7 @@ from loudbatch.io_utils import (
     csv_filename,
     csv_filename_key,
     duration_from_stream,
+    format_gain_db,
     load_targets_csv,
     mapped_fieldnames,
     parse_column_map,
@@ -339,6 +340,19 @@ class LoadTargetsCsvTests(unittest.TestCase):
         self.assertEqual(targets, {"keep": -18.5})
 
 
+class FormatGainDbTests(unittest.TestCase):
+    def test_truncates_toward_zero_to_one_decimal(self) -> None:
+        self.assertEqual(format_gain_db(1.29), "1.2")
+        self.assertEqual(format_gain_db(-4.69), "-4.6")
+        self.assertEqual(format_gain_db(1.99), "1.9")
+        self.assertEqual(format_gain_db(-1.99), "-1.9")
+
+    def test_keeps_values_already_at_one_decimal(self) -> None:
+        self.assertEqual(format_gain_db(1.5), "1.5")
+        self.assertEqual(format_gain_db(-2.0), "-2.0")
+        self.assertEqual(format_gain_db(0.0), "0.0")
+
+
 class ParseColumnMapTests(unittest.TestCase):
     def test_parses_pairs_and_strips_whitespace(self) -> None:
         mapping = parse_column_map(
@@ -487,6 +501,7 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         self.assertEqual(norm_by_name["loud"]["sample_peak_status"], "")
         self.assertEqual(norm_by_name["loud"]["true_peak_status"], "")
         self.assertRegex(norm_by_name["loud"]["input_lufs"], r"^-?\d+\.\d$")
+        self.assertRegex(norm_by_name["loud"]["gain_db"], r"^-?\d+\.\d$")
         self.assertNotEqual(float(norm_by_name["loud"]["input_lufs"]), TARGET_I)
         self.assertEqual(float(norm_by_name["loud"]["target_lufs"]), TARGET_I)
 
