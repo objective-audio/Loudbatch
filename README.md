@@ -47,6 +47,8 @@ CSV 列:
 | `status` | `ok` / `error` |
 | `error` | 失敗時のメッセージ |
 
+0.4 秒以下のファイルは、計測時だけ末尾に無音を足して 0.5 秒にしてから Integrated を取ります（書き出す音声の長さは変えません）。
+
 ### 正規化（別フォルダへ書き出し）
 
 `measure` で得た CSV を `--csv` に渡し、同じ（拡張子なしの）ファイル名の音声をその `integrated_lufs` に揃えます。CSV の値を編集して別の目標を指定することもできます。
@@ -75,7 +77,7 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `error` | 失敗時のメッセージ |
 | `input_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
 | `target_lufs` | CSV から採用した目標 Integrated（LUFS、小数点以下1桁） |
-| `gain_db` | 適用ゲイン（dB） |
+| `gain_db` | 適用ゲイン（dB、小数点以下1桁・切り捨て） |
 | `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
 | `true_peak_status` | True Peak が 0 dBTP 超なら `over`、計測不能なら `unknown`（未超過は空） |
 
@@ -95,6 +97,7 @@ python -m unittest discover -s tests -v
 
 ## 補足
 
+- 0.4 秒以下のファイルは、計測時だけ末尾に無音を足して 0.5 秒にしてから Integrated を取ります。無音が混ざるため、ワンショット単体より静かめの値になります。正規化の書き出しは元の長さのままです。
 - 正規化は ebur128 で Integrated を計測し、CSV の目標との差を `volume` ゲインで適用します（ピーク制限なし。整数 PCM ではクリップし得ます）。
 - ゲイン適用後にサンプルピーク / True Peak が 0 を超える場合は警告のみ（書き出しは継続）。`loudbatch_normalize.csv` の `sample_peak_status` / `true_peak_status` で確認できます。ピークを測定できなかった場合は `unknown` になります。
 - リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します。

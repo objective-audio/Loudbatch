@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional
 
 from .io_utils import (
+    audio_duration_seconds,
     csv_filename,
     format_lufs,
     iter_audio_files,
@@ -15,6 +16,18 @@ from .io_utils import (
     validate_linear_pcm,
     write_csv,
 )
+
+# ebur128 Integrated needs a 400ms gating block; pad shorter files for measure only.
+EBUR128_MIN_DURATION = 0.4
+EBUR128_PAD_WHOLE_DUR = 0.5
+
+
+def ebur128_filter(path: Path) -> str:
+    duration = audio_duration_seconds(path)
+    if duration is not None and duration <= EBUR128_MIN_DURATION:
+        return f"apad=whole_dur={EBUR128_PAD_WHOLE_DUR},ebur128=peak=true"
+    return "ebur128=peak=true"
+
 
 # Final summary lines look like:
 #   I:         -23.0 LUFS
@@ -67,7 +80,7 @@ def measure_file(path: Path) -> Dict[str, object]:
                 "-i",
                 str(path),
                 "-af",
-                "ebur128=peak=true",
+                ebur128_filter(path),
                 "-f",
                 "null",
                 "-",

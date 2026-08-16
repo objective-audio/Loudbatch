@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import shutil
 import subprocess
 import unittest
@@ -14,6 +15,8 @@ from loudbatch.io_utils import (
     NORMALIZE_CSV_FIELDNAMES,
     csv_filename,
     csv_filename_key,
+    duration_from_stream,
+    format_gain_db,
     load_targets_csv,
     mapped_fieldnames,
     parse_column_map,
@@ -22,7 +25,7 @@ from loudbatch.io_utils import (
     validate_linear_pcm,
     write_csv,
 )
-from loudbatch.measure import measure_directory
+from loudbatch.measure import ebur128_filter, measure_directory, measure_file
 from loudbatch.normalize import _peak_status, normalize_directory, pcm_codec_from_stream
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -337,6 +340,19 @@ class LoadTargetsCsvTests(unittest.TestCase):
         self.assertEqual(targets, {"keep": -18.5})
 
 
+class FormatGainDbTests(unittest.TestCase):
+    def test_truncates_toward_zero_to_one_decimal(self) -> None:
+        self.assertEqual(format_gain_db(1.29), "1.2")
+        self.assertEqual(format_gain_db(-4.69), "-4.6")
+        self.assertEqual(format_gain_db(1.99), "1.9")
+        self.assertEqual(format_gain_db(-1.99), "-1.9")
+
+    def test_keeps_values_already_at_one_decimal(self) -> None:
+        self.assertEqual(format_gain_db(1.5), "1.5")
+        self.assertEqual(format_gain_db(-2.0), "-2.0")
+        self.assertEqual(format_gain_db(0.0), "0.0")
+
+
 class ParseColumnMapTests(unittest.TestCase):
     def test_parses_pairs_and_strips_whitespace(self) -> None:
         mapping = parse_column_map(
@@ -485,6 +501,7 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         self.assertEqual(norm_by_name["loud"]["sample_peak_status"], "")
         self.assertEqual(norm_by_name["loud"]["true_peak_status"], "")
         self.assertRegex(norm_by_name["loud"]["input_lufs"], r"^-?\d+\.\d$")
+        self.assertRegex(norm_by_name["loud"]["gain_db"], r"^-?\d+\.\d$")
         self.assertNotEqual(float(norm_by_name["loud"]["input_lufs"]), TARGET_I)
         self.assertEqual(float(norm_by_name["loud"]["target_lufs"]), TARGET_I)
 
@@ -847,6 +864,89 @@ class PeakOverCsvTests(unittest.TestCase):
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["sample_peak_status"], "over")
         self.assertEqual(row["true_peak_status"], "over")
+
+
+class DurationFromStreamTests(unittest.TestCase):
+    def test_prefers_duration_field(self) -> None:
+        self.assertEqual(duration_from_stream({"duration": "0.286417"}), 0.286417)
+
+    def test_falls_back_to_samples_over_rate(self) -> None:
+        self.assertAlmostEqual(
+            duration_from_stream({"nb_samples": "13748", "sample_rate": "48000"}),
+            13748 / 48000,
+        )
+
+    def test_returns_none_when_missing(self) -> None:
+        self.assertIsNone(duration_from_stream({}))
+        self.assertIsNone(duration_from_stream({"duration": "N/A"}))
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
+class ShortFilePadMeasureTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.input_dir = WORK_ROOT / "short_input"
+        self.measure_out = WORK_ROOT / "short_measure_out"
+        self.normalize_out = WORK_ROOT / "short_normalize_out"
+        self.short_wav = self.input_dir / "click.wav"
+        _generate_sine(self.short_wav, volume_db=-6.0, duration=0.2)
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_measure_and_normalize_short_sine(self) -> None:
+        self.assertIn("apad=whole_dur=0.5", ebur128_filter(self.short_wav))
+        long_wav = WORK_ROOT / "long.wav"
+        _generate_sine(long_wav, volume_db=-6.0, duration=3.0)
+        self.assertEqual(ebur128_filter(long_wav), "ebur128=peak=true")
+
+        measure_csv = self.measure_out / "loudbatch.csv"
+        rows = measure_directory(self.input_dir, measure_csv)
+        self.assertEqual(len(rows), 1)
+        by_name = _rows_by_filename(measure_csv)
+        row = by_name["click"]
+        self.assertEqual(row["status"], "ok")
+        self.assertRegex(row["integrated_lufs"], r"^-?\d+\.\d$")
+        integrated = float(row["integrated_lufs"])
+        self.assertGreater(integrated, -70.0)
+        self.assertTrue(math.isfinite(integrated))
+
+        measured = measure_file(self.short_wav)
+        self.assertEqual(measured["status"], "ok")
+
+        normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            csv_path=_write_targets_csv(
+                WORK_ROOT / "short_targets.csv",
+                {"click": TARGET_I},
+            ),
+        )
+        dst = self.normalize_out / "click.wav"
+        self.assertTrue(dst.is_file())
+        src_stream = probe_audio_stream(self.short_wav)
+        dst_stream = probe_audio_stream(dst)
+        self.assertIsNotNone(src_stream)
+        self.assertIsNotNone(dst_stream)
+        assert src_stream is not None and dst_stream is not None
+        self.assertAlmostEqual(
+            float(src_stream["duration"]),
+            0.2,
+            places=2,
+        )
+        self.assertAlmostEqual(
+            float(dst_stream["duration"]),
+            float(src_stream["duration"]),
+            places=2,
+        )
+
+        rem = measure_file(dst)
+        self.assertEqual(rem["status"], "ok")
+        self.assertLessEqual(
+            abs(float(str(rem["integrated_lufs"])) - TARGET_I),
+            TOLERANCE_LU,
+            msg=f"short I={rem['integrated_lufs']} (target {TARGET_I} ± {TOLERANCE_LU})",
+        )
 
 
 class PeakStatusHelperTests(unittest.TestCase):

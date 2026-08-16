@@ -7,6 +7,7 @@ import json
 import math
 import shutil
 import subprocess
+from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -53,6 +54,11 @@ NORMALIZE_COLUMN_KEYS = list(
 
 def format_lufs(value: float) -> str:
     return f"{value:.1f}"
+
+
+def format_gain_db(value: float) -> str:
+    quantized = Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_DOWN)
+    return format(quantized, "f")
 
 
 def require_ffmpeg() -> str:
@@ -103,6 +109,36 @@ def probe_audio_stream(path: Path) -> Optional[Dict[str, Any]]:
         return None
     stream = streams[0]
     return stream if isinstance(stream, dict) else None
+
+
+def duration_from_stream(stream: Mapping[str, Any]) -> Optional[float]:
+    """Return duration in seconds from ffprobe stream metadata, if available."""
+    raw = stream.get("duration")
+    if raw not in (None, "", "N/A"):
+        try:
+            value = float(raw)
+            if math.isfinite(value) and value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+
+    samples = stream.get("nb_samples")
+    rate = stream.get("sample_rate")
+    try:
+        n = int(samples)  # type: ignore[arg-type]
+        sr = float(rate)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if n >= 0 and sr > 0:
+        return n / sr
+    return None
+
+
+def audio_duration_seconds(path: Path) -> Optional[float]:
+    stream = probe_audio_stream(path)
+    if not stream:
+        return None
+    return duration_from_stream(stream)
 
 
 def validate_linear_pcm(path: Path) -> Optional[str]:
@@ -216,7 +252,7 @@ def load_targets_csv(
     lufs_col = mapping.get("integrated_lufs", "integrated_lufs")
     status_col = mapping.get("status", "status")
 
-    with path.open(newline="", encoding="utf-8") as fh:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         fieldnames = reader.fieldnames or []
         if filename_col not in fieldnames or lufs_col not in fieldnames:
