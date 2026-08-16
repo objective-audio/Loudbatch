@@ -139,8 +139,6 @@ def _empty_normalize_row(src: Path) -> Dict[str, object]:
         "integrated_lufs": "",
         "target_lufs": "",
         "gain_db": "",
-        "sample_peak_db": "",
-        "true_peak_db": "",
         "sample_peak_over": "",
         "true_peak_over": "",
     }
@@ -198,8 +196,8 @@ def normalize_file(
     )
     true_peak_after = true_peak_in + gain_db if true_peak_in is not None else None
 
-    row["sample_peak_db"] = "" if sample_peak_after is None else sample_peak_after
-    row["true_peak_db"] = "" if true_peak_after is None else true_peak_after
+    row["_sample_peak_db"] = "" if sample_peak_after is None else sample_peak_after
+    row["_true_peak_db"] = "" if true_peak_after is None else true_peak_after
     row["sample_peak_over"] = _peak_over_flag(sample_peak_after)
     row["true_peak_over"] = _peak_over_flag(true_peak_after)
 
@@ -274,12 +272,12 @@ def normalize_directory(
             if row.get("sample_peak_over") == "over":
                 print(
                     f"  警告: サンプルピークが 0 dBFS を超えます"
-                    f" ({row.get('sample_peak_db')} dBFS)"
+                    f" ({row.get('_sample_peak_db')} dBFS)"
                 )
             if row.get("true_peak_over") == "over":
                 print(
                     f"  警告: True Peak が 0 dBTP を超えます"
-                    f" ({row.get('true_peak_db')} dBTP)"
+                    f" ({row.get('_true_peak_db')} dBTP)"
                 )
         else:
             failed += 1

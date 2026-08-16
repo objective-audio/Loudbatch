@@ -575,8 +575,6 @@ class PeakOverCsvTests(unittest.TestCase):
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["sample_peak_over"], "over")
         self.assertEqual(row["true_peak_over"], "over")
-        self.assertGreater(float(row["sample_peak_db"]), 0.0)
-        self.assertGreater(float(row["true_peak_db"]), 0.0)
 
 
 if __name__ == "__main__":

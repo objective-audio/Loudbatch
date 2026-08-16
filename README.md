@@ -69,8 +69,6 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `integrated_lufs` | 入力の Integrated（LUFS） |
 | `target_lufs` | CSV から採用した目標 Integrated（LUFS） |
 | `gain_db` | 適用ゲイン（dB） |
-| `sample_peak_db` | ゲイン適用後の予測サンプルピーク（dBFS） |
-| `true_peak_db` | ゲイン適用後の予測 True Peak（dBTP） |
 | `sample_peak_over` | サンプルピークが 0 dBFS 超なら `over`（未超過は空） |
 | `true_peak_over` | True Peak が 0 dBTP 超なら `over`（未超過は空） |
 
