@@ -234,13 +234,19 @@ def normalize_directory(
     *,
     csv_path: Path,
     recursive: bool = False,
+    column_map: Optional[Mapping[str, str]] = None,
 ) -> List[Dict[str, object]]:
-    targets = load_targets_csv(csv_path)
+    targets = load_targets_csv(csv_path, column_map=column_map)
     output_csv = output_dir / "loudbatch_normalize.csv"
     files = iter_audio_files(input_dir, recursive=recursive)
     if not files:
         print(f"音声ファイルが見つかりません: {input_dir}")
-        write_csv(output_csv, [], fieldnames=NORMALIZE_CSV_FIELDNAMES)
+        write_csv(
+            output_csv,
+            [],
+            fieldnames=NORMALIZE_CSV_FIELDNAMES,
+            column_map=column_map,
+        )
         print_summary("normalize", 0, 0)
         return []
 
@@ -288,7 +294,12 @@ def normalize_directory(
             failed += 1
             print(f"  失敗: {row['error']}")
 
-    write_csv(output_csv, rows, fieldnames=NORMALIZE_CSV_FIELDNAMES)
+    write_csv(
+        output_csv,
+        rows,
+        fieldnames=NORMALIZE_CSV_FIELDNAMES,
+        column_map=column_map,
+    )
     print(f"CSV 書き出し: {output_csv}")
     print_summary("normalize", ok, failed)
     return rows

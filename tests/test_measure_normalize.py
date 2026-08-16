@@ -12,6 +12,8 @@ from loudbatch.io_utils import (
     CSV_FIELDNAMES,
     NORMALIZE_CSV_FIELDNAMES,
     load_targets_csv,
+    mapped_fieldnames,
+    parse_column_map,
     probe_audio_stream,
     require_ffmpeg,
     validate_linear_pcm,
@@ -165,12 +167,14 @@ def _write_targets_csv(path: Path, targets: dict[str, float]) -> Path:
 def _rows_by_filename(
     csv_path: Path,
     fieldnames: list[str] | None = None,
+    *,
+    filename_key: str = "filename",
 ) -> dict[str, dict[str, str]]:
     expected = list(fieldnames) if fieldnames is not None else list(CSV_FIELDNAMES)
     with csv_path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         assert reader.fieldnames == expected
-        return {row["filename"]: row for row in reader}
+        return {row[filename_key]: row for row in reader}
 
 
 class LoadTargetsCsvTests(unittest.TestCase):
@@ -228,6 +232,137 @@ class LoadTargetsCsvTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             load_targets_csv(self.csv_path)
         self.assertIn("見つかりません", str(ctx.exception))
+
+    def test_reads_remapped_column_names(self) -> None:
+        write_csv(
+            self.csv_path,
+            [
+                {
+                    "filename": "keep.wav",
+                    "integrated_lufs": -18.5,
+                    "status": "ok",
+                    "error": "",
+                }
+            ],
+            column_map={"filename": "ファイル名", "integrated_lufs": "目標LUFS"},
+        )
+        targets = load_targets_csv(
+            self.csv_path,
+            column_map={"filename": "ファイル名", "integrated_lufs": "目標LUFS"},
+        )
+        self.assertEqual(targets, {"keep.wav": -18.5})
+
+    def test_accepts_rows_when_status_column_is_absent(self) -> None:
+        self.csv_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.csv_path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=["filename", "integrated_lufs"])
+            writer.writeheader()
+            writer.writerow({"filename": "keep.wav", "integrated_lufs": "-23.0"})
+        targets = load_targets_csv(self.csv_path)
+        self.assertEqual(targets, {"keep.wav": -23.0})
+
+    def test_skips_non_ok_when_status_column_is_remapped(self) -> None:
+        write_csv(
+            self.csv_path,
+            [
+                {
+                    "filename": "keep.wav",
+                    "integrated_lufs": -18.5,
+                    "status": "ok",
+                    "error": "",
+                },
+                {
+                    "filename": "bad.wav",
+                    "integrated_lufs": -12.0,
+                    "status": "error",
+                    "error": "計測に失敗しました",
+                },
+            ],
+            column_map={"status": "状態"},
+        )
+        targets = load_targets_csv(self.csv_path, column_map={"status": "状態"})
+        self.assertEqual(targets, {"keep.wav": -18.5})
+
+
+class ParseColumnMapTests(unittest.TestCase):
+    def test_parses_pairs_and_strips_whitespace(self) -> None:
+        mapping = parse_column_map(
+            ["filename=ファイル名", " integrated_lufs = LUFS "],
+            CSV_FIELDNAMES,
+        )
+        self.assertEqual(
+            mapping,
+            {"filename": "ファイル名", "integrated_lufs": "LUFS"},
+        )
+
+    def test_empty_pairs_returns_empty_map(self) -> None:
+        self.assertEqual(parse_column_map([], CSV_FIELDNAMES), {})
+
+    def test_rejects_missing_equals(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            parse_column_map(["filename"], CSV_FIELDNAMES)
+        self.assertIn("内部名=CSV列名", str(ctx.exception))
+
+    def test_rejects_unknown_internal_name(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            parse_column_map(["target_lufs=目標"], CSV_FIELDNAMES)
+        self.assertIn("不明な列名", str(ctx.exception))
+
+    def test_rejects_duplicate_internal_name(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            parse_column_map(
+                ["filename=A", "filename=B"],
+                CSV_FIELDNAMES,
+            )
+        self.assertIn("同じ列が複数", str(ctx.exception))
+
+    def test_rejects_duplicate_csv_names(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            parse_column_map(
+                ["filename=同じ", "status=同じ"],
+                CSV_FIELDNAMES,
+            )
+        self.assertIn("同じ CSV 列名", str(ctx.exception))
+
+    def test_rejects_collision_with_unmapped_name(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            parse_column_map(["filename=status"], CSV_FIELDNAMES)
+        self.assertIn("同じ CSV 列名", str(ctx.exception))
+
+
+class WriteCsvColumnMapTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.csv_path = WORK_ROOT / "mapped.csv"
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_writes_mapped_headers_from_internal_keys(self) -> None:
+        column_map = {"filename": "ファイル名", "integrated_lufs": "LUFS"}
+        write_csv(
+            self.csv_path,
+            [
+                {
+                    "filename": "a.wav",
+                    "integrated_lufs": -23.0,
+                    "status": "ok",
+                    "error": "",
+                }
+            ],
+            column_map=column_map,
+        )
+        expected = mapped_fieldnames(CSV_FIELDNAMES, column_map)
+        with self.csv_path.open(newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            self.assertEqual(reader.fieldnames, expected)
+            rows = list(reader)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["ファイル名"], "a.wav")
+        self.assertEqual(rows[0]["LUFS"], "-23.0")
+        self.assertEqual(rows[0]["status"], "ok")
+        self.assertNotIn("filename", rows[0])
+
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
@@ -301,6 +436,73 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
                 TOLERANCE_LU,
                 msg=f"{name} I={integrated} (target {TARGET_I} ± {TOLERANCE_LU})",
             )
+
+
+@unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")
+class ColumnMapDirectoryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _clean_work_root()
+        self.input_dir = WORK_ROOT / "input"
+        self.measure_out = WORK_ROOT / "measure_out"
+        self.normalize_out = WORK_ROOT / "normalize_out"
+        _generate_sine(self.input_dir / "tone.wav", volume_db=-6.0)
+
+    def tearDown(self) -> None:
+        _clean_work_root()
+
+    def test_measure_and_normalize_use_column_map_headers(self) -> None:
+        measure_map = {"filename": "ファイル名", "integrated_lufs": "LUFS"}
+        measure_csv = self.measure_out / "loudbatch.csv"
+        measure_directory(
+            self.input_dir,
+            measure_csv,
+            column_map=measure_map,
+        )
+        measure_headers = mapped_fieldnames(CSV_FIELDNAMES, measure_map)
+        by_name = _rows_by_filename(
+            measure_csv,
+            fieldnames=measure_headers,
+            filename_key="ファイル名",
+        )
+        self.assertIn("tone.wav", by_name)
+        self.assertEqual(by_name["tone.wav"]["status"], "ok")
+        self.assertRegex(by_name["tone.wav"]["LUFS"], r"^-?\d+\.\d$")
+
+        normalize_map = {
+            "filename": "ファイル名",
+            "integrated_lufs": "LUFS",
+            "target_lufs": "目標LUFS",
+        }
+        targets_csv = WORK_ROOT / "targets.csv"
+        write_csv(
+            targets_csv,
+            [
+                {
+                    "filename": "tone.wav",
+                    "integrated_lufs": TARGET_I,
+                    "status": "ok",
+                    "error": "",
+                }
+            ],
+            column_map={"filename": "ファイル名", "integrated_lufs": "LUFS"},
+        )
+        normalize_directory(
+            self.input_dir,
+            self.normalize_out,
+            csv_path=targets_csv,
+            column_map=normalize_map,
+        )
+        self.assertTrue((self.normalize_out / "tone.wav").is_file())
+        normalize_csv = self.normalize_out / "loudbatch_normalize.csv"
+        norm_by_name = _rows_by_filename(
+            normalize_csv,
+            fieldnames=mapped_fieldnames(NORMALIZE_CSV_FIELDNAMES, normalize_map),
+            filename_key="ファイル名",
+        )
+        row = norm_by_name["tone.wav"]
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(float(row["目標LUFS"]), TARGET_I)
+        self.assertRegex(row["LUFS"], r"^-?\d+\.\d$")
 
 
 @unittest.skipUnless(_ffmpeg_available(), "ffmpeg が PATH 上にありません")

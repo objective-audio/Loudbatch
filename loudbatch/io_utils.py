@@ -141,38 +141,93 @@ def relative_under(root: Path, path: Path) -> Path:
         return Path(path.name)
 
 
-def load_targets_csv(path: Path) -> Dict[str, float]:
+def mapped_fieldnames(
+    fieldnames: Sequence[str],
+    column_map: Optional[Mapping[str, str]] = None,
+) -> List[str]:
+    mapping = dict(column_map or {})
+    headers = [mapping.get(name, name) for name in fieldnames]
+    seen: set[str] = set()
+    for header in headers:
+        if header in seen:
+            raise SystemExit(f"複数の列が同じ CSV 列名にマップされています: {header}")
+        seen.add(header)
+    return headers
+
+
+def parse_column_map(
+    pairs: Sequence[str],
+    allowed: Sequence[str],
+) -> Dict[str, str]:
+    """Parse repeated --column INTERNAL=NAME arguments into a rename map."""
+    allowed_set = set(allowed)
+    result: Dict[str, str] = {}
+    for raw in pairs:
+        if "=" not in raw:
+            raise SystemExit(
+                f"--column は 内部名=CSV列名 の形式で指定してください: {raw}"
+            )
+        key, name = raw.split("=", 1)
+        key = key.strip()
+        name = name.strip()
+        if not key or not name:
+            raise SystemExit(
+                f"--column は 内部名=CSV列名 の形式で指定してください: {raw}"
+            )
+        if key not in allowed_set:
+            allowed_list = ", ".join(allowed)
+            raise SystemExit(f"不明な列名です: {key}（使えるのは: {allowed_list}）")
+        if key in result:
+            raise SystemExit(f"同じ列が複数指定されています: {key}")
+        result[key] = name
+    mapped_fieldnames(allowed, result)
+    return result
+
+
+def load_targets_csv(
+    path: Path,
+    *,
+    column_map: Optional[Mapping[str, str]] = None,
+) -> Dict[str, float]:
     """Load per-file target Integrated LUFS from a measure CSV."""
     if not path.is_file():
         raise SystemExit(f"目標 CSV が見つかりません: {path}")
 
+    mapping = dict(column_map or {})
+    filename_col = mapping.get("filename", "filename")
+    lufs_col = mapping.get("integrated_lufs", "integrated_lufs")
+    status_col = mapping.get("status", "status")
+
     with path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         fieldnames = reader.fieldnames or []
-        if "filename" not in fieldnames or "integrated_lufs" not in fieldnames:
-            raise SystemExit("目標 CSV に filename と integrated_lufs 列が必要です")
+        if filename_col not in fieldnames or lufs_col not in fieldnames:
+            raise SystemExit(
+                f"目標 CSV に {filename_col} と {lufs_col} 列が必要です"
+            )
 
+        has_status = status_col in fieldnames
         seen: set[str] = set()
         targets: Dict[str, float] = {}
         for row in reader:
-            name = (row.get("filename") or "").strip()
+            name = (row.get(filename_col) or "").strip()
             if not name:
                 continue
             if name in seen:
                 raise SystemExit(f"目標 CSV に同じファイル名が複数あります: {name}")
             seen.add(name)
 
-            if (row.get("status") or "").strip() != "ok":
+            if has_status and (row.get(status_col) or "").strip() != "ok":
                 continue
-            raw = (row.get("integrated_lufs") or "").strip()
+            raw = (row.get(lufs_col) or "").strip()
             try:
                 value = float(raw)
             except ValueError:
                 raise SystemExit(
-                    f"目標 CSV の integrated_lufs が数値ではありません: {name}"
+                    f"目標 CSV の {lufs_col} が数値ではありません: {name}"
                 )
             if not math.isfinite(value):
-                raise SystemExit(f"目標 CSV の integrated_lufs が無効です: {name}")
+                raise SystemExit(f"目標 CSV の {lufs_col} が無効です: {name}")
             targets[name] = value
     return targets
 
@@ -181,13 +236,19 @@ def write_csv(
     path: Path,
     rows: Sequence[Mapping[str, object]],
     fieldnames: Sequence[str] = CSV_FIELDNAMES,
+    *,
+    column_map: Optional[Mapping[str, str]] = None,
 ) -> None:
+    mapping = dict(column_map or {})
+    headers = mapped_fieldnames(fieldnames, mapping)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(fieldnames))
+        writer = csv.DictWriter(fh, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: row.get(key, "") for key in fieldnames})
+            writer.writerow(
+                {mapping.get(key, key): row.get(key, "") for key in fieldnames}
+            )
 
 
 def run_ffmpeg(args: Sequence[str], *, check: bool = False) -> subprocess.CompletedProcess:
