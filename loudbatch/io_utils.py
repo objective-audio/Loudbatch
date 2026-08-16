@@ -105,6 +105,36 @@ def probe_audio_stream(path: Path) -> Optional[Dict[str, Any]]:
     return stream if isinstance(stream, dict) else None
 
 
+def duration_from_stream(stream: Mapping[str, Any]) -> Optional[float]:
+    """Return duration in seconds from ffprobe stream metadata, if available."""
+    raw = stream.get("duration")
+    if raw not in (None, "", "N/A"):
+        try:
+            value = float(raw)
+            if math.isfinite(value) and value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+
+    samples = stream.get("nb_samples")
+    rate = stream.get("sample_rate")
+    try:
+        n = int(samples)  # type: ignore[arg-type]
+        sr = float(rate)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if n >= 0 and sr > 0:
+        return n / sr
+    return None
+
+
+def audio_duration_seconds(path: Path) -> Optional[float]:
+    stream = probe_audio_stream(path)
+    if not stream:
+        return None
+    return duration_from_stream(stream)
+
+
 def validate_linear_pcm(path: Path) -> Optional[str]:
     """Return an error message if the file is not linear PCM; otherwise None."""
     ext = path.suffix.lower()
