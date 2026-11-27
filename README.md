@@ -68,7 +68,7 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 
 照合は拡張子なしのファイル名です（既存 CSV に `.wav` などが付いていても読み込めます）。CSV に目標が無いファイルは書き出さず `status=error` になります。元ファイルは変更しません。相対パス構造を保ったまま出力フォルダへ書き出します。ピーク制限は行わないため、ブースト時は 0 dBFS を超えてクリップし得ます。
 
-正規化結果は出力フォルダの `loudbatch_normalize.csv` に記録します。ゲイン適用後の予測ピークが 0 を超える場合もファイルは書き出し、コンソールに警告を出し CSV のフラグで判別できます。
+正規化結果は出力フォルダの `loudbatch_normalize.csv` に記録します。ゲイン適用後の予測ピークが 0 を超える場合も、入出力の長さが違う場合も、ファイルは書き出し、コンソールに警告を出し CSV のフラグで判別できます。
 
 | 列 | 内容 |
 | --- | --- |
@@ -78,6 +78,9 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `input_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
 | `target_lufs` | CSV から採用した目標 Integrated（LUFS、小数点以下1桁） |
 | `gain_db` | 適用ゲイン（dB、小数点以下1桁・切り捨て） |
+| `input_duration` | 入力の長さ（秒、小数点以下3桁） |
+| `output_duration` | 出力の長さ（秒、小数点以下3桁）。書き出せなかった行は空 |
+| `duration_status` | 長さが違うと `diff`、判定できないと `unknown`（一致は空）。サンプルレートが同じときはフレーム数の一致、違うときは秒数の差が低い方の 1 サンプル以内なら一致 |
 | `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
 | `true_peak_status` | True Peak が 0 dBTP 超なら `over`、計測不能なら `unknown`（未超過は空） |
 
@@ -100,4 +103,5 @@ python -m unittest discover -s tests -v
 - 0.4 秒以下のファイルは、計測時だけ末尾に無音を足して 0.5 秒にしてから Integrated を取ります。無音が混ざるため、ワンショット単体より静かめの値になります。正規化の書き出しは元の長さのままです。
 - 正規化は ebur128 で Integrated を計測し、CSV の目標との差を `volume` ゲインで適用します（ピーク制限なし。整数 PCM ではクリップし得ます）。
 - ゲイン適用後にサンプルピーク / True Peak が 0 を超える場合は警告のみ（書き出しは継続）。`loudbatch_normalize.csv` の `sample_peak_status` / `true_peak_status` で確認できます。ピークを測定できなかった場合は `unknown` になります。
+- 正規化後の長さは `input_duration` / `output_duration`（秒、小数点以下3桁）に記録します。サンプルレートが同じときはフレーム数が一致するか、違うときは秒数の差が低い方の 1 サンプル以内かを見て、違う場合は `duration_status` が `diff`、判定できない場合は `unknown` です。違っていても書き出しは継続し、コンソールに警告します。
 - リニア PCM は、元のコーデック（ビット深度など）・サンプルレート・チャンネル数をできるだけ継承します。

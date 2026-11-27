@@ -42,6 +42,9 @@ NORMALIZE_CSV_FIELDNAMES = [
     "input_lufs",
     "target_lufs",
     "gain_db",
+    "input_duration",
+    "output_duration",
+    "duration_status",
     "sample_peak_status",
     "true_peak_status",
 ]
@@ -59,6 +62,69 @@ def format_lufs(value: float) -> str:
 def format_gain_db(value: float) -> str:
     quantized = Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_DOWN)
     return format(quantized, "f")
+
+
+def format_duration_seconds(value: float) -> str:
+    return f"{value:.3f}"
+
+
+def _nearest_int(raw: Any) -> Optional[int]:
+    if raw in (None, "", "N/A"):
+        return None
+    try:
+        number = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    rounded = int(round(number))
+    if abs(number - rounded) > 1e-6:
+        return None
+    return rounded
+
+
+def sample_rate_hz(stream: Mapping[str, Any]) -> Optional[int]:
+    rate = _nearest_int(stream.get("sample_rate"))
+    if rate is None or rate <= 0:
+        return None
+    return rate
+
+
+def _time_base_fraction(raw: Any) -> Optional[tuple[int, int]]:
+    if not isinstance(raw, str) or "/" not in raw:
+        return None
+    num_s, den_s = raw.split("/", 1)
+    try:
+        num = int(num_s)
+        den = int(den_s)
+    except ValueError:
+        return None
+    if num <= 0 or den <= 0:
+        return None
+    return num, den
+
+
+def frame_count_from_stream(stream: Mapping[str, Any]) -> Optional[int]:
+    """Exact frame count. Does not round a duration string into samples."""
+    samples = _nearest_int(stream.get("nb_samples"))
+    if samples is not None and samples >= 0:
+        return samples
+
+    # ffprobe often omits nb_samples for WAV. duration_ts is the length in
+    # time_base ticks, which is the sample count when the base matches the rate.
+    rate = sample_rate_hz(stream)
+    ticks = _nearest_int(stream.get("duration_ts"))
+    base = _time_base_fraction(stream.get("time_base"))
+    if rate is not None and ticks is not None and ticks >= 0 and base is not None:
+        num, den = base
+        numerator = ticks * num * rate
+        if numerator % den == 0:
+            return numerator // den
+
+    frames = _nearest_int(stream.get("nb_frames"))
+    if frames is not None and frames >= 0:
+        return frames
+    return None
 
 
 def require_ffmpeg() -> str:
@@ -132,6 +198,15 @@ def duration_from_stream(stream: Mapping[str, Any]) -> Optional[float]:
     if n >= 0 and sr > 0:
         return n / sr
     return None
+
+
+def stream_duration_seconds(stream: Mapping[str, Any]) -> Optional[float]:
+    """Seconds for display: frame count / sample rate, else stream duration."""
+    frames = frame_count_from_stream(stream)
+    rate = sample_rate_hz(stream)
+    if frames is not None and rate:
+        return frames / rate
+    return duration_from_stream(stream)
 
 
 def audio_duration_seconds(path: Path) -> Optional[float]:
