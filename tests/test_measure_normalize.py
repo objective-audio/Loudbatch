@@ -16,17 +16,25 @@ from loudbatch.io_utils import (
     csv_filename,
     csv_filename_key,
     duration_from_stream,
+    format_duration_seconds,
     format_gain_db,
+    frame_count_from_stream,
     load_targets_csv,
     mapped_fieldnames,
     parse_column_map,
     probe_audio_stream,
     require_ffmpeg,
+    stream_duration_seconds,
     validate_linear_pcm,
     write_csv,
 )
 from loudbatch.measure import ebur128_filter, measure_directory, measure_file
-from loudbatch.normalize import _peak_status, normalize_directory, pcm_codec_from_stream
+from loudbatch.normalize import (
+    _peak_status,
+    duration_compare_status,
+    normalize_directory,
+    pcm_codec_from_stream,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORK_ROOT = REPO_ROOT / "workspace" / "test"
@@ -500,6 +508,14 @@ class MeasureNormalizeIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(norm_by_name["loud"]["sample_peak_status"], "")
         self.assertEqual(norm_by_name["loud"]["true_peak_status"], "")
+        self.assertEqual(norm_by_name["loud"]["duration_status"], "")
+        self.assertRegex(norm_by_name["loud"]["input_duration"], r"^\d+\.\d{3}$")
+        self.assertRegex(norm_by_name["loud"]["output_duration"], r"^\d+\.\d{3}$")
+        self.assertEqual(norm_by_name["quiet"]["duration_status"], "")
+        self.assertEqual(
+            norm_by_name["quiet"]["input_duration"],
+            norm_by_name["quiet"]["output_duration"],
+        )
         self.assertRegex(norm_by_name["loud"]["input_lufs"], r"^-?\d+\.\d$")
         self.assertRegex(norm_by_name["loud"]["gain_db"], r"^-?\d+\.\d$")
         self.assertNotEqual(float(norm_by_name["loud"]["input_lufs"]), TARGET_I)
@@ -672,6 +688,9 @@ class MissingCsvTargetTests(unittest.TestCase):
         self.assertEqual(rows[0]["filename"], "tone")
         self.assertEqual(rows[0]["status"], "error")
         self.assertIn("目標値", str(rows[0]["error"]))
+        self.assertEqual(rows[0]["input_duration"], "")
+        self.assertEqual(rows[0]["output_duration"], "")
+        self.assertEqual(rows[0]["duration_status"], "")
         self.assertFalse((self.normalize_out / "tone.wav").exists())
 
 
@@ -824,6 +843,9 @@ class SilenceNormalizeFailureTests(unittest.TestCase):
         self.assertEqual(norm["filename"], "silence")
         self.assertEqual(norm["status"], "error")
         self.assertTrue(norm["error"])
+        self.assertEqual(norm["output_duration"], "")
+        self.assertEqual(norm["duration_status"], "")
+        self.assertRegex(str(norm["input_duration"]), r"^\d+\.\d{3}$")
         self.assertFalse((self.normalize_out / "silence.wav").exists())
 
 
@@ -924,6 +946,14 @@ class ShortFilePadMeasureTests(unittest.TestCase):
         )
         dst = self.normalize_out / "click.wav"
         self.assertTrue(dst.is_file())
+        normalize_csv = self.normalize_out / "loudbatch_normalize.csv"
+        short_row = _rows_by_filename(
+            normalize_csv,
+            fieldnames=list(NORMALIZE_CSV_FIELDNAMES),
+        )["click"]
+        self.assertEqual(short_row["duration_status"], "")
+        self.assertRegex(short_row["input_duration"], r"^\d+\.\d{3}$")
+        self.assertEqual(short_row["input_duration"], short_row["output_duration"])
         src_stream = probe_audio_stream(self.short_wav)
         dst_stream = probe_audio_stream(dst)
         self.assertIsNotNone(src_stream)
@@ -956,6 +986,96 @@ class PeakStatusHelperTests(unittest.TestCase):
         self.assertEqual(_peak_status(0.1), "over")
         self.assertEqual(_peak_status(0.0), "")
         self.assertEqual(_peak_status(-1.0), "")
+
+
+class DurationCompareTests(unittest.TestCase):
+    def test_format_duration_uses_three_decimals(self) -> None:
+        self.assertEqual(format_duration_seconds(1), "1.000")
+        self.assertEqual(format_duration_seconds(0.2), "0.200")
+        self.assertEqual(format_duration_seconds(1.2346), "1.235")
+
+    def test_display_seconds_prefer_frames_over_rate(self) -> None:
+        seconds = stream_duration_seconds(
+            {"sample_rate": "48000", "nb_samples": "24000", "duration": "9"}
+        )
+        self.assertEqual(seconds, 0.5)
+        fallback = stream_duration_seconds({"duration": "1.25"})
+        self.assertEqual(fallback, 1.25)
+
+    def test_same_rate_matching_frames(self) -> None:
+        src = {"sample_rate": "48000", "nb_samples": "48000"}
+        dst = {"sample_rate": "48000", "nb_samples": "48000"}
+        self.assertEqual(duration_compare_status(src, dst), "")
+
+    def test_same_rate_one_frame_is_diff_even_when_display_matches(self) -> None:
+        src = {"sample_rate": "48000", "nb_samples": "48000"}
+        dst = {"sample_rate": "48000", "nb_samples": "48001"}
+        self.assertEqual(duration_compare_status(src, dst), "diff")
+        src_seconds = stream_duration_seconds(src)
+        dst_seconds = stream_duration_seconds(dst)
+        self.assertIsNotNone(src_seconds)
+        self.assertIsNotNone(dst_seconds)
+        assert src_seconds is not None and dst_seconds is not None
+        self.assertEqual(format_duration_seconds(src_seconds), "1.000")
+        self.assertEqual(format_duration_seconds(dst_seconds), "1.000")
+
+    def test_different_rate_within_one_lower_rate_sample(self) -> None:
+        src = {"sample_rate": "48000", "nb_samples": "48000"}
+        dst = {"sample_rate": "44100", "nb_samples": "44101"}
+        self.assertEqual(duration_compare_status(src, dst), "")
+
+    def test_different_rate_beyond_one_lower_rate_sample(self) -> None:
+        src = {"sample_rate": "48000", "nb_samples": "48000"}
+        dst = {"sample_rate": "44100", "nb_samples": "44102"}
+        self.assertEqual(duration_compare_status(src, dst), "diff")
+
+    def test_different_rate_falls_back_to_duration_when_frames_missing(self) -> None:
+        src = {"sample_rate": "48000", "duration": "1.0"}
+        same = {"sample_rate": "44100", "duration": "1.0"}
+        longer = {"sample_rate": "44100", "duration": "1.001"}
+        self.assertEqual(duration_compare_status(src, same), "")
+        self.assertEqual(duration_compare_status(src, longer), "diff")
+
+    def test_duration_ts_counts_as_frames_when_time_base_matches(self) -> None:
+        src = {
+            "sample_rate": "44100",
+            "duration_ts": 8820,
+            "time_base": "1/44100",
+            "duration": "0.200000",
+        }
+        one_more = {**src, "duration_ts": 8821}
+        self.assertEqual(frame_count_from_stream(src), 8820)
+        self.assertEqual(
+            frame_count_from_stream({"sample_rate": "44100", "nb_frames": "8820"}),
+            8820,
+        )
+        self.assertEqual(duration_compare_status(src, src), "")
+        self.assertEqual(duration_compare_status(src, one_more), "diff")
+        src_seconds = stream_duration_seconds(src)
+        dst_seconds = stream_duration_seconds(one_more)
+        self.assertIsNotNone(src_seconds)
+        self.assertIsNotNone(dst_seconds)
+        assert src_seconds is not None and dst_seconds is not None
+        self.assertEqual(format_duration_seconds(src_seconds), "0.200")
+        self.assertEqual(format_duration_seconds(dst_seconds), "0.200")
+        self.assertIsNone(
+            frame_count_from_stream(
+                {
+                    "sample_rate": "48000",
+                    "duration_ts": "1",
+                    "time_base": "1/44100",
+                }
+            )
+        )
+
+    def test_same_rate_missing_frames_is_unknown(self) -> None:
+        src = {"sample_rate": "48000", "duration": "1.0"}
+        dst = {"sample_rate": "48000", "duration": "1.0"}
+        self.assertEqual(duration_compare_status(src, dst), "unknown")
+        self.assertEqual(
+            duration_compare_status(None, {"sample_rate": "48000", "nb_samples": "1"}),
+            "unknown",
+        )
 
 
 if __name__ == "__main__":

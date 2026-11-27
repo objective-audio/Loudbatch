@@ -4,20 +4,27 @@ from __future__ import annotations
 
 import math
 import re
+import shutil
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from .io_utils import (
     NORMALIZE_CSV_FIELDNAMES,
     csv_filename,
+    duration_from_stream,
+    format_duration_seconds,
     format_gain_db,
     format_lufs,
+    frame_count_from_stream,
     iter_audio_files,
     load_targets_csv,
     print_summary,
     probe_audio_stream,
     relative_under,
     run_ffmpeg,
+    sample_rate_hz,
+    stream_duration_seconds,
     validate_linear_pcm,
     write_csv,
 )
@@ -134,6 +141,58 @@ def _peak_status(peak_db: Optional[float]) -> str:
     return "over" if peak_db > 0.0 else ""
 
 
+def _duration_for_compare(
+    stream: Mapping[str, Any],
+    frames: Optional[int],
+    rate: int,
+) -> Optional[Fraction]:
+    if frames is not None:
+        return Fraction(frames, rate)
+    seconds = duration_from_stream(stream)
+    if seconds is None or not math.isfinite(seconds) or seconds < 0:
+        return None
+    return Fraction(seconds)
+
+
+def duration_compare_status(
+    src: Optional[Mapping[str, Any]],
+    dst: Optional[Mapping[str, Any]],
+) -> str:
+    """Return ``diff`` when lengths differ, ``unknown`` when they cannot be compared."""
+    if not src or not dst:
+        return "unknown"
+    src_rate = sample_rate_hz(src)
+    dst_rate = sample_rate_hz(dst)
+    if src_rate is None or dst_rate is None:
+        return "unknown"
+    src_frames = frame_count_from_stream(src)
+    dst_frames = frame_count_from_stream(dst)
+    if src_rate == dst_rate:
+        if src_frames is None or dst_frames is None:
+            return "unknown"
+        return "diff" if src_frames != dst_frames else ""
+
+    src_sec = _duration_for_compare(src, src_frames, src_rate)
+    dst_sec = _duration_for_compare(dst, dst_frames, dst_rate)
+    if src_sec is None or dst_sec is None:
+        return "unknown"
+    # One sample at the lower rate is still the same length.
+    limit = Fraction(1, min(src_rate, dst_rate))
+    return "diff" if abs(src_sec - dst_sec) > limit else ""
+
+
+def _fill_input_duration(row: Dict[str, object], src: Path) -> Optional[Mapping[str, Any]]:
+    if shutil.which("ffprobe") is None:
+        return None
+    stream = probe_audio_stream(src)
+    if not stream:
+        return None
+    seconds = stream_duration_seconds(stream)
+    if seconds is not None:
+        row["input_duration"] = format_duration_seconds(seconds)
+    return stream
+
+
 def _empty_normalize_row(src: Path) -> Dict[str, object]:
     return {
         "filename": csv_filename(src),
@@ -144,6 +203,9 @@ def _empty_normalize_row(src: Path) -> Dict[str, object]:
         "gain_db": "",
         "sample_peak_status": "",
         "true_peak_status": "",
+        "input_duration": "",
+        "output_duration": "",
+        "duration_status": "",
     }
 
 
@@ -155,6 +217,7 @@ def normalize_file(
 ) -> Dict[str, object]:
     row = _empty_normalize_row(src)
     row["target_lufs"] = format_lufs(target_i)
+    src_stream = _fill_input_duration(row, src)
 
     pcm_error = validate_linear_pcm(src)
     if pcm_error:
@@ -226,6 +289,12 @@ def normalize_file(
         row["error"] = detail
         return row
 
+    dst_stream = probe_audio_stream(dst)
+    if dst_stream:
+        seconds = stream_duration_seconds(dst_stream)
+        if seconds is not None:
+            row["output_duration"] = format_duration_seconds(seconds)
+    row["duration_status"] = duration_compare_status(src_stream, dst_stream)
     row["status"] = "ok"
     return row
 
@@ -265,6 +334,7 @@ def normalize_directory(
         if target_i is None:
             row = _empty_normalize_row(src)
             row["error"] = "CSV に目標値がありません"
+            _fill_input_duration(row, src)
             rows.append(row)
             failed += 1
             print(f"  失敗: {row['error']}")
@@ -292,6 +362,14 @@ def normalize_directory(
                 )
             elif row.get("true_peak_status") == "unknown":
                 print("  警告: True Peak を測定できませんでした")
+            if row.get("duration_status") == "diff":
+                print(
+                    "  警告: 長さが一致しません"
+                    f" (入力 {row.get('input_duration')} 秒"
+                    f" / 出力 {row.get('output_duration')} 秒)"
+                )
+            elif row.get("duration_status") == "unknown":
+                print("  警告: 長さを比較できませんでした")
         else:
             failed += 1
             print(f"  失敗: {row['error']}")
