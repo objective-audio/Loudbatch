@@ -78,11 +78,11 @@ python -m loudbatch normalize /path/to/audio_dir -o /path/to/out_dir --csv /path
 | `input_lufs` | 入力の Integrated（LUFS、小数点以下1桁） |
 | `target_lufs` | CSV から採用した目標 Integrated（LUFS、小数点以下1桁） |
 | `gain_db` | 適用ゲイン（dB、小数点以下1桁・切り捨て） |
-| `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
-| `true_peak_status` | True Peak が 0 dBTP 超なら `over`、計測不能なら `unknown`（未超過は空） |
 | `input_duration` | 入力の長さ（秒、小数点以下3桁） |
 | `output_duration` | 出力の長さ（秒、小数点以下3桁）。書き出せなかった行は空 |
 | `duration_status` | 長さが違うと `diff`、判定できないと `unknown`（一致は空）。サンプルレートが同じときはフレーム数の一致、違うときは秒数の差が低い方の 1 サンプル以内なら一致 |
+| `sample_peak_status` | サンプルピークが 0 dBFS 超なら `over`、計測不能なら `unknown`（未超過は空） |
+| `true_peak_status` | True Peak が 0 dBTP 超なら `over`、計測不能なら `unknown`（未超過は空） |
 
 ## 対応拡張子
 

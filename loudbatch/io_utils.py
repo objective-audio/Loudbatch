@@ -42,11 +42,11 @@ NORMALIZE_CSV_FIELDNAMES = [
     "input_lufs",
     "target_lufs",
     "gain_db",
-    "sample_peak_status",
-    "true_peak_status",
     "input_duration",
     "output_duration",
     "duration_status",
+    "sample_peak_status",
+    "true_peak_status",
 ]
 
 # --column で使える内部名（入力 CSV の目標列 + 出力 CSV 列）

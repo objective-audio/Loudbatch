@@ -201,11 +201,11 @@ def _empty_normalize_row(src: Path) -> Dict[str, object]:
         "input_lufs": "",
         "target_lufs": "",
         "gain_db": "",
-        "sample_peak_status": "",
-        "true_peak_status": "",
         "input_duration": "",
         "output_duration": "",
         "duration_status": "",
+        "sample_peak_status": "",
+        "true_peak_status": "",
     }
 
 
